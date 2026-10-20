@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Cloudflare Wrangler local state (dev server, D1/DO local databases)
+.wrangler/
+
+# Build output
+dist/
+build/
+
+# Test and coverage output
+coverage/
+.vitest/
+.vitest-reports/
+test-results/
+
+# Local secrets. Copy .dev.vars.example to .dev.vars and fill it in.
+.dev.vars
+.env
+.env.*
+!.env.example
+
+# Pi's local task logs
+.pi/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/

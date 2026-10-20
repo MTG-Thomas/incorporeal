@@ -1,0 +1,74 @@
+# The execution backend's entry point into this repository.
+#
+# The organization dispatches this workflow when an agent asks to run
+# something: the `github-actions` execution backend sends `command`, `args`
+# and `notes` as workflow inputs. That is the whole interface.
+#
+# The command is NOT run as a shell command. A model's instruction is data,
+# never authority, so the input is matched against a fixed allowlist of the
+# repository's own commands and anything else is refused. A workflow runner
+# is a sandbox, but a sandbox with the repository's credentials and its
+# network is not a place to execute text a model produced.
+name: agent-task
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "The repository command to run: test, typecheck, check or build."
+        required: true
+        type: string
+      args:
+        description: "Extra arguments, ignored by the allowlist for now."
+        required: false
+        type: string
+      notes:
+        description: "Why the agent asked for this, recorded in the run."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-task-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run the requested repository command
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Record the request
+        run: |
+          echo "command: ${{ inputs.command }}"
+          echo "args:    ${{ inputs.args }}"
+          echo "notes:   ${{ inputs.notes }}"
+
+      - name: Run the command
+        env:
+          AGENT_COMMAND: ${{ inputs.command }}
+        run: |
+          case "$AGENT_COMMAND" in
+            test)      npm test ;;
+            typecheck) npm run typecheck ;;
+            check)     npm run check ;;
+            build)     npm run build ;;
+            *)
+              echo "::error::refusing to run '$AGENT_COMMAND': the allowed commands are test, typecheck, check and build"
+              exit 1
+              ;;
+          esac

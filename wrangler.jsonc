@@ -1,0 +1,60 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "incorporeal",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-20",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"observability": {
+		"enabled": true
+	},
+	// One Durable Object class hosts every agent. Identity comes from the
+	// object's name (the agent id), not from the class, so an agent can be
+	// replaced without a migration. SQLite-backed, which is the only backend
+	// available on the Workers Free plan.
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "ORG_AGENTS",
+				"class_name": "OrgAgent"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["OrgAgent"]
+		}
+	],
+	// Shared operational state. Replace `database_id` with the id printed by
+	// `npx wrangler d1 create incorporeal`.
+	"d1_databases": [
+		{
+			"binding": "ORG_DB",
+			"database_name": "incorporeal",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	// Workers AI. The Free plan grants 10,000 neurons/day; see docs/free-tier.md.
+	"ai": {
+		"binding": "AI"
+	},
+	// The only cron trigger in the system. It does nothing but hand the
+	// obligation sweep to the coordinator Durable Object, because a Workers
+	// Free invocation gets 10 ms of CPU while a Durable Object gets 30 s.
+	"triggers": {
+		"crons": ["*/15 * * * *"]
+	},
+	"vars": {
+		"ORG_ENV": "local",
+		"MODEL_DEFAULT": "@cf/zai-org/glm-4.7-flash",
+		"MODEL_COORDINATOR": "@cf/zai-org/glm-4.7-flash",
+		"MODEL_ENGINEER": "@cf/moonshotai/kimi-k2.7-code",
+		"MODEL_REVIEWER": "@cf/zai-org/glm-4.7-flash",
+		"THINKING_LEVEL": "low",
+		"EXECUTION_BACKEND": "simulated",
+		"REPO_PROVIDER": "simulated",
+		"SIMULATED_REPO_STATE": "{\"ciStatus\":\"failing\",\"workflow\":\"build-and-test\",\"branch\":\"main\",\"issue\":\"Simulated CI failure: the nightly workflow failed.\"}"
+	}
+}

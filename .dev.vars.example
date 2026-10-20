@@ -1,0 +1,40 @@
+# Template for local development secrets. NOT a real secret file.
+#
+# Copy this file to `.dev.vars` (which is gitignored) and fill in the real
+# values:
+#
+#     cp .dev.vars.example .dev.vars
+#
+# `wrangler dev` reads `.dev.vars` automatically; it never reads this template.
+# Never commit `.dev.vars` and never paste real secrets into this file.
+
+# Bearer token for the management API. Any long random string you choose for
+# local work; it authorizes every /api route except the health check.
+ORG_API_TOKEN=local-development-token-change-me
+
+# Shared secret for inbound webhooks (POST /api/webhooks/<source>). Any long
+# random string you choose for local work.
+WEBHOOK_SECRET=local-webhook-secret-change-me
+
+# Optional GitHub integration. A fine-grained token with the permissions the
+# organization needs (for example actions: read and write on one repository).
+# Leave it empty to keep the GitHub integration disabled.
+GITHUB_TOKEN=
+
+# The repository the agents work in, as owner/name. Required only when the
+# GitHub integration is enabled.
+GITHUB_REPO=
+
+# The workflow file the agents trigger, as a path relative to the repository
+# root. Required only when the GitHub integration is enabled.
+GITHUB_WORKFLOW=
+
+# An external model provider needs no secret here: put a Cloudflare AI
+# Gateway id in the MODEL_* variables in wrangler.jsonc (for example
+# "openai/gpt-4o-mini" or "anthropic/claude-haiku-4-5") and the gateway holds
+# the provider's credentials. The provider bills you directly.
+
+# The non-secret configuration does NOT belong here: the model ids
+# (MODEL_DEFAULT, MODEL_COORDINATOR, MODEL_ENGINEER, MODEL_REVIEWER),
+# THINKING_LEVEL, MODEL_PROVIDER, EXECUTION_BACKEND, REPO_PROVIDER and
+# SIMULATED_REPO_STATE live in wrangler.jsonc under "vars".

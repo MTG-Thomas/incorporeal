@@ -442,6 +442,23 @@ The practical remedy is to replace the agent with a successor
 permissions, the budgets and the open tasks, and starts with an empty
 transcript, so it begins at 0 bytes instead of at the ceiling.
 
+## Providers that cost money elsewhere
+
+The Cloudflare plan is not the only bill. A provider outside Cloudflare
+charges for itself, on its own terms, and the organization does not hide
+that.
+
+| Provider | What it costs | Notes |
+| --- | --- | --- |
+| **OpenCode Go** | A subscription: $10/month (Go) or $40/month (Go Plus) | The usage limits are monthly dollar amounts per model, with sub-windows: 20% of the monthly limit over five hours, 50% weekly, 100% monthly. The per-model monthly caps run from $15 to $60 on Go, and $60 to $240 on Go Plus. A few models are unlimited but temporary and region-restricted. Console pay-as-you-go credits are a *separate* product and are a different base URL. |
+| **A ChatGPT subscription** | The subscription the operator already pays for | No per-token bill: the cost is the subscription. The token rotates, so the organization stores and refreshes it. |
+| **An OpenAI-compatible service of your own** | Whatever that service charges | The configuration is generic, so any OpenAI-compatible endpoint can be used. |
+| **GitHub Actions** (the execution backend) | GitHub Actions minutes | Free for public repositories, billed for private ones. An independent cost. |
+
+The Free plan's own budget is unchanged by any of this: a provider outside
+Cloudflare does not consume neurons, and a deployment that uses one is not
+spending the Free allocation.
+
 ## What would break first
 
 In rough order of likelihood for a real deployment:

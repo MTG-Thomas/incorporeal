@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	parent_task_id   TEXT,
 	review_of_task_id TEXT,
 	dedupe_key       TEXT,                              -- one task per key, e.g. apply:<review id>
+	tool_task_id     TEXT,                              -- the tool call that made this row
 	fingerprint      TEXT,                              -- dedupe key for findings
 	deadline_at      INTEGER,
 	requires_approval INTEGER NOT NULL DEFAULT 0,
@@ -75,6 +76,9 @@ CREATE INDEX IF NOT EXISTS tasks_assignee_status ON tasks(assignee, status);
 CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS tasks_goal ON tasks(goal_id);
 CREATE INDEX IF NOT EXISTS tasks_created ON tasks(created_at);
+-- One row per tool call: a replayed call finds the row it made.
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_tool_task_unique
+	ON tasks(tool_task_id) WHERE tool_task_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS obligations (
 	obligation_id    TEXT PRIMARY KEY,
@@ -95,6 +99,7 @@ CREATE TABLE IF NOT EXISTS obligations (
 CREATE TABLE IF NOT EXISTS approvals (
 	approval_id  TEXT PRIMARY KEY,
 	task_id      TEXT,
+	tool_task_id TEXT,
 	requested_by TEXT NOT NULL,
 	reason       TEXT NOT NULL,
 	status       TEXT NOT NULL DEFAULT 'pending',      -- pending | approved | rejected | expired
@@ -103,6 +108,9 @@ CREATE TABLE IF NOT EXISTS approvals (
 	created_at   INTEGER NOT NULL
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS approvals_tool_task_unique
+	ON approvals(tool_task_id) WHERE tool_task_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS knowledge (
 	knowledge_id TEXT PRIMARY KEY,
 	kind         TEXT NOT NULL,                        -- decision | convention | finding
@@ -110,11 +118,15 @@ CREATE TABLE IF NOT EXISTS knowledge (
 	body         TEXT NOT NULL,
 	author_agent TEXT NOT NULL,
 	task_id      TEXT,
+	tool_task_id TEXT,
 	created_at   INTEGER NOT NULL,
 	updated_at   INTEGER NOT NULL
 );
 
 -- Every externally consequential action, keyed for idempotent replay.
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_tool_task_unique
+	ON knowledge(tool_task_id) WHERE tool_task_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS executions (
 	execution_id    TEXT PRIMARY KEY,
 	task_id         TEXT NOT NULL,

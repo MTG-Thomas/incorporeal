@@ -27,6 +27,7 @@ import {
 } from "../db/org.ts";
 import type { Env } from "../env.ts";
 import { selectExecutionBackend } from "../execution/index.ts";
+import { sendExecution } from "../execution/run.ts";
 import { logError, logInfo, logWarn, describeError } from "../logging.ts";
 import { checkAgentDailyBudget, checkTaskBudget } from "../policy/budget.ts";
 import { hasPermission, parsePermissions, type Permission } from "../policy/permissions.ts";
@@ -190,6 +191,9 @@ export function createOrgExtension(context: OrgToolContext) {
 				content: Type.Optional(Type.String())
 			}))
 		}),
+		// The task's own state makes this idempotent: a replay finds the
+		// task already reported.
+		replay: "safe",
 		async execute(args, api, piContext): Promise<ToolOutput> {
 			await requirePermission(context, "task.report");
 			// The assignment names the task. A report says which task it is
@@ -248,6 +252,9 @@ export function createOrgExtension(context: OrgToolContext) {
 			kind: Type.Optional(Type.String()),
 			deadline_minutes: Type.Optional(Type.Number())
 		}),
+		// A replay after an interruption finds the task this call made
+		// instead of creating a second one.
+		replay: "safe",
 		async execute(args, api, piContext): Promise<ToolOutput> {
 			await requirePermission(context, "task.delegate");
 			const taskId = await currentTaskId(api, piContext);
@@ -266,6 +273,7 @@ export function createOrgExtension(context: OrgToolContext) {
 			}
 			const deadlineMinutes = args.deadline_minutes ?? 60;
 			const { task, created } = await createTask(context.env.ORG_DB, {
+				toolTaskId: String(api.taskId),
 				goalId: parent?.goal_id ?? null,
 				kind: args.kind ?? "investigate",
 				title: args.title,
@@ -315,6 +323,8 @@ export function createOrgExtension(context: OrgToolContext) {
 		description:
 			"Ask a human to authorize something. The task is blocked until a human approves it through the management API.",
 		parameters: Type.Object({ reason: Type.String() }),
+		// A replay finds the request this call made.
+		replay: "safe",
 		async execute(args, api, piContext): Promise<ToolOutput> {
 			await requirePermission(context, "task.approve");
 			const taskId = await currentTaskId(api, piContext);
@@ -322,7 +332,8 @@ export function createOrgExtension(context: OrgToolContext) {
 			const approval = await createApproval(context.env.ORG_DB, {
 				taskId,
 				requestedBy: context.agentId,
-				reason: args.reason
+				reason: args.reason,
+				toolTaskId: String(api.taskId)
 			});
 			if (taskId) {
 				await updateTask(context.env.ORG_DB, taskId, {
@@ -357,6 +368,8 @@ export function createOrgExtension(context: OrgToolContext) {
 			title: Type.String(),
 			body: Type.String()
 		}),
+		// A replay finds the entry this call wrote.
+		replay: "safe",
 		async execute(args, api, piContext): Promise<ToolOutput> {
 			await requirePermission(context, "knowledge.write");
 			const taskId = await currentTaskId(api, piContext);
@@ -366,7 +379,8 @@ export function createOrgExtension(context: OrgToolContext) {
 				title: args.title,
 				body: args.body,
 				authorAgent: context.agentId,
-				taskId
+				taskId,
+				toolTaskId: String(api.taskId)
 			});
 			return text(`Recorded knowledge ${row.knowledge_id} (${args.kind}).`);
 		}
@@ -424,50 +438,41 @@ export function createOrgExtension(context: OrgToolContext) {
 				spec: { command: args.command, args: args.args ?? [], notes: args.notes ?? "" }
 			});
 			if (!created) {
+				if (row.status === "pending" && !row.run_id) {
+					// The action was recorded but never sent: the process died
+					// in the window between the two. It may still be sent.
+					const retried = await sendExecution({
+						env: context.env,
+						db: context.env.ORG_DB,
+						backend,
+						row,
+						spec: { command: args.command, args: args.args, notes: args.notes },
+						correlationId: task.correlation_id,
+						agentId: context.agentId
+					});
+					return text(
+						`Execution ${row.execution_id} was recorded but never sent; it has now been sent (run ${retried.runId}).`
+					);
+				}
 				// A replay after an interruption: the first attempt already ran.
 				return text(
 					`Execution ${row.execution_id} was already recorded for idempotency key ${args.idempotency_key} (status ${row.status}). Not running it twice.`
 				);
 			}
-			try {
-				const handle = await backend.submit(
-					{
-						command: args.command,
-						args: args.args,
-						notes: args.notes,
-						requestedAt: Date.now()
-					},
-					{ env: context.env, correlationId: task.correlation_id }
-				);
-				await updateExecution(context.env.ORG_DB, row.execution_id, {
-					status: handle.status === "failed" ? "failed" : "submitted",
-					runId: handle.runId,
-					result: { detail: handle.detail, url: handle.url }
-				});
-				await recordEvent(context.env.ORG_DB, {
-					correlationId: task.correlation_id,
-					agentId: context.agentId,
-					taskId,
-					type: "execution.submitted",
-					payload: { backend: backend.name, run_id: handle.runId, command: args.command }
-				});
-				return text(
-					`Submitted "${args.command}" to the ${backend.name} backend (run ${handle.runId}). ${
-						handle.detail ?? ""
-					}`.trim()
-				);
-			} catch (error) {
-				await updateExecution(context.env.ORG_DB, row.execution_id, {
-					status: "failed",
-					result: { error: error instanceof Error ? error.message : String(error) }
-				});
-				logWarn("execution failed", {
-					agentId: context.agentId,
-					taskId,
-					error: error instanceof Error ? error.message : String(error)
-				});
-				throw error;
-			}
+			const handle = await sendExecution({
+				env: context.env,
+				db: context.env.ORG_DB,
+				backend,
+				row,
+				spec: { command: args.command, args: args.args, notes: args.notes },
+				correlationId: task.correlation_id,
+				agentId: context.agentId
+			});
+			return text(
+				`Submitted "${args.command}" to the ${backend.name} backend (run ${handle.runId}). ${
+					handle.detail ?? ""
+				}`.trim()
+			);
 		}
 	});
 

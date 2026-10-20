@@ -170,6 +170,8 @@ export type CreateTaskInput = {
 	reviewOfTaskId?: string | null;
 	/** One task per key: a replayed handoff cannot create a second one. */
 	dedupeKey?: string | null;
+	/** The tool call that made this row, so a replay finds it again. */
+	toolTaskId?: string | null;
 	fingerprint?: string | null;
 	deadlineAt?: number | null;
 	requiresApproval?: boolean;
@@ -197,8 +199,8 @@ export async function createTask(
 			.prepare(
 				`INSERT INTO tasks (task_id, goal_id, kind, title, instruction, assignee, created_by,
 					status, attempt, max_attempts, depth, parent_task_id, review_of_task_id, dedupe_key,
-					fingerprint, deadline_at, requires_approval, correlation_id, created_at, updated_at)
-				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'assigned', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)`
+					fingerprint, deadline_at, requires_approval, correlation_id, tool_task_id, created_at, updated_at)
+				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'assigned', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)`
 			)
 			.bind(
 				taskId,
@@ -218,6 +220,7 @@ export async function createTask(
 				input.deadlineAt ?? null,
 				input.requiresApproval ? 1 : 0,
 				input.correlationId,
+				input.toolTaskId ?? null,
 				now
 			)
 			.run();
@@ -239,6 +242,13 @@ async function findDuplicateTask(
 		const row = await db
 			.prepare("SELECT * FROM tasks WHERE review_of_task_id = ?1 LIMIT 1")
 			.bind(input.reviewOfTaskId)
+			.first<TaskRow>();
+		if (row) return row;
+	}
+	if (input.toolTaskId) {
+		const row = await db
+			.prepare("SELECT * FROM tasks WHERE tool_task_id = ?1 LIMIT 1")
+			.bind(input.toolTaskId)
 			.first<TaskRow>();
 		if (row) return row;
 	}
@@ -525,16 +535,30 @@ export async function releaseObligation(db: D1Database, obligationId: string): P
 
 export async function createApproval(
 	db: D1Database,
-	input: { taskId: string | null; requestedBy: string; reason: string }
+	input: { taskId: string | null; requestedBy: string; reason: string; toolTaskId?: string | null }
 ): Promise<ApprovalRow> {
+	if (input.toolTaskId) {
+		const existing = await db
+			.prepare("SELECT * FROM approvals WHERE tool_task_id = ?1 LIMIT 1")
+			.bind(input.toolTaskId)
+			.first<ApprovalRow>();
+		if (existing) return existing;
+	}
 	const approvalId = shortId("apv");
 	const now = Date.now();
 	await db
 		.prepare(
-			`INSERT INTO approvals (approval_id, task_id, requested_by, reason, status, created_at)
-			 VALUES (?1, ?2, ?3, ?4, 'pending', ?5)`
+			`INSERT INTO approvals (approval_id, task_id, requested_by, reason, status, created_at, tool_task_id)
+			 VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6)`
 		)
-		.bind(approvalId, input.taskId, input.requestedBy, input.reason, now)
+		.bind(
+			approvalId,
+			input.taskId,
+			input.requestedBy,
+			input.reason,
+			now,
+			input.toolTaskId ?? null
+		)
 		.run();
 	const row = await db
 		.prepare("SELECT * FROM approvals WHERE approval_id = ?1")
@@ -595,14 +619,22 @@ export async function addKnowledge(
 		body: string;
 		authorAgent: string;
 		taskId?: string | null;
+		toolTaskId?: string | null;
 	}
 ): Promise<KnowledgeRow> {
+	if (input.toolTaskId) {
+		const existing = await db
+			.prepare("SELECT * FROM knowledge WHERE tool_task_id = ?1 LIMIT 1")
+			.bind(input.toolTaskId)
+			.first<KnowledgeRow>();
+		if (existing) return existing;
+	}
 	const knowledgeId = shortId("kn");
 	const now = Date.now();
 	await db
 		.prepare(
-			`INSERT INTO knowledge (knowledge_id, kind, title, body, author_agent, task_id, created_at, updated_at)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)`
+			`INSERT INTO knowledge (knowledge_id, kind, title, body, author_agent, task_id, created_at, updated_at, tool_task_id)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)`
 		)
 		.bind(
 			knowledgeId,
@@ -611,7 +643,8 @@ export async function addKnowledge(
 			input.body,
 			input.authorAgent,
 			input.taskId ?? null,
-			now
+			now,
+			input.toolTaskId ?? null
 		)
 		.run();
 	const row = await db
@@ -659,7 +692,7 @@ export async function recordExecution(
 			.prepare(
 				`INSERT INTO executions (execution_id, task_id, idempotency_key, backend, spec, status,
 					created_at, updated_at)
-				 VALUES (?1, ?2, ?3, ?4, ?5, 'submitted', ?6, ?6)`
+				 VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?6)`
 			)
 			.bind(
 				shortId("exe"),
@@ -684,6 +717,37 @@ export async function recordExecution(
 		.first<ExecutionRow>();
 	if (!row) throw new Error("execution disappeared after insert");
 	return { row, created: true };
+}
+
+/** The statuses that mean a task still owes work. */
+const OPEN_STATUSES: TaskStatus[] = ["pending", "assigned", "running", "blocked"];
+
+/**
+ * The task that started a chain, or the one still waiting in it.
+ *
+ * A finding opens a chain: the investigation, the review of it, and the
+ * apply step that waits for a human. While any of them is open, the problem
+ * is unresolved, and a recurrence of the same finding is the same problem.
+ */
+export async function findOpenChainTask(
+	db: D1Database,
+	taskId: string
+): Promise<TaskRow | null> {
+	const task = await getTask(db, taskId);
+	if (!task) return null;
+	if (OPEN_STATUSES.includes(task.status)) return task;
+	const review = await db
+		.prepare("SELECT * FROM tasks WHERE review_of_task_id = ?1 LIMIT 1")
+		.bind(taskId)
+		.first<TaskRow>();
+	if (!review) return null;
+	if (OPEN_STATUSES.includes(review.status)) return review;
+	const apply = await db
+		.prepare("SELECT * FROM tasks WHERE parent_task_id = ?1 AND kind = 'apply' LIMIT 1")
+		.bind(review.task_id)
+		.first<TaskRow>();
+	if (apply && OPEN_STATUSES.includes(apply.status)) return apply;
+	return null;
 }
 
 /** The executions that are still in flight. */

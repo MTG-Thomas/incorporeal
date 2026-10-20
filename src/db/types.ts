@@ -12,7 +12,7 @@ export type TaskStatus =
 export type GoalStatus = "active" | "achieved" | "blocked" | "paused";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
 export type KnowledgeKind = "decision" | "convention" | "finding";
-export type ExecutionStatus = "submitted" | "succeeded" | "failed";
+export type ExecutionStatus = "pending" | "submitted" | "succeeded" | "failed";
 
 export type AgentRow = {
 	agent_id: string;

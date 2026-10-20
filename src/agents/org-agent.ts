@@ -31,6 +31,7 @@ import {
 	createApproval,
 	createTask,
 	findAgentByRole,
+	findOpenChainTask,
 	getTask,
 	listExecutions,
 	listObligations,
@@ -45,6 +46,7 @@ import {
 import type { ObligationRow, TaskRow } from "../db/types.ts";
 import { selectRepositoryCheck } from "../checks/index.ts";
 import { selectExecutionBackend } from "../execution/index.ts";
+import { sendExecution } from "../execution/run.ts";
 import type { Env } from "../env.ts";
 import { describeError, logError, logInfo, logWarn } from "../logging.ts";
 import { AssignmentDoc } from "./docs.ts";
@@ -55,12 +57,27 @@ import { createOrgExtension } from "./tools.ts";
 /** How long an obligation sweep may hold its lock. */
 const OBLIGATION_LEASE_MS = 5 * 60_000;
 
-/** What an obligation remembers between sweeps. */
+/**
+ * What an obligation remembers between sweeps.
+ *
+ * One record per finding, not one record for the last finding: a single
+ * "last seen" would be defeated by two findings alternating, and each would
+ * open its own chain.
+ */
 type ObligationState = {
-	/** The finding the last task was made for. */
-	lastFingerprint?: string;
-	/** When that task was made. */
-	lastCreatedAt?: number;
+	fingerprints?: Record<
+		string,
+		{
+			/** When the finding was first seen. */
+			firstSeen: number;
+			/** When it was last seen. */
+			lastSeen: number;
+			/** When a task was made for it. */
+			lastCreatedAt: number;
+			/** That task. */
+			taskId: string;
+		}
+	>;
 };
 
 export class OrgAgent extends DurableObject<Env> {
@@ -882,18 +899,23 @@ export class OrgAgent extends DurableObject<Env> {
 		const now = Date.now();
 		let created = 0;
 		for (const finding of findings) {
+			const known = state.fingerprints?.[finding.fingerprint];
+			const unresolved = known ? await findOpenChainTask(this.env.ORG_DB, known.taskId) : null;
 			if (
-				state.lastFingerprint === finding.fingerprint &&
-				now - (state.lastCreatedAt ?? 0) < cooldownMs
+				known &&
+				(unresolved !== null || now - (known.lastCreatedAt ?? 0) < cooldownMs)
 			) {
 				await recordEvent(this.env.ORG_DB, {
 					correlationId: `cor_${obligation.obligation_id}`,
 					agentId: this.#agentId,
+					taskId: unresolved?.task_id ?? known.taskId,
 					type: "finding.suppressed",
 					payload: {
 						obligation_id: obligation.obligation_id,
 						fingerprint: finding.fingerprint,
-						reason: "the same finding was already turned into a task"
+						reason: unresolved
+							? "the work this finding started has not finished"
+							: "the same finding was turned into a task recently"
 					}
 				});
 				continue;
@@ -921,8 +943,15 @@ export class OrgAgent extends DurableObject<Env> {
 				continue;
 			}
 			created += 1;
-			next.lastFingerprint = finding.fingerprint;
-			next.lastCreatedAt = now;
+			next.fingerprints = {
+				...next.fingerprints,
+				[finding.fingerprint]: {
+					firstSeen: known?.firstSeen ?? now,
+					lastSeen: now,
+					lastCreatedAt: now,
+					taskId: task.task_id
+				}
+			};
 			await recordEvent(this.env.ORG_DB, {
 				correlationId: task.correlation_id,
 				agentId: this.#agentId,
@@ -944,12 +973,28 @@ export class OrgAgent extends DurableObject<Env> {
 	 */
 	async #reconcileExecutions(): Promise<number> {
 		const pending = await listExecutions(this.env.ORG_DB, "submitted");
-		if (pending.length === 0) return 0;
+		const unsent = await listExecutions(this.env.ORG_DB, "pending");
+		const rows = [...unsent, ...pending];
+		if (rows.length === 0) return 0;
 		const backend = selectExecutionBackend(this.env);
 		let settled = 0;
-		for (const row of pending) {
-			if (!row.run_id) continue;
+		for (const row of rows) {
 			try {
+				if (!row.run_id) {
+					// Recorded but never sent: the process died in the window
+					// between the two. It may still be sent.
+					await sendExecution({
+						env: this.env,
+						db: this.env.ORG_DB,
+						backend,
+						row,
+						spec: parseJson(row.spec) as { command: string },
+						correlationId: `cor_${row.execution_id}`,
+						agentId: this.#agentId
+					});
+					settled += 1;
+					continue;
+				}
 				const handle = await backend.status(row.run_id, {
 					env: this.env,
 					correlationId: `cor_${row.execution_id}`

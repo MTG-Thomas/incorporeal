@@ -317,10 +317,14 @@ allocation is gone. The bounds are:
   failing workflow cannot stack duplicate work. Unlike the review
   reference, the fingerprint is released when the task completes
   (`fingerprint: null`), so a later occurrence can open a fresh task. The
-  obligation also remembers the finding it last acted on, and a **cooldown**
-  (`max(interval x 4, 1 hour)`) stands between two tasks for the same
-  failure. Without it, a permanently failing workflow would produce a new
-  task, a new review and a new approval every fifteen minutes.
+  obligation remembers **one record per finding** — not one record for the
+  last finding, which two alternating failures would defeat — and a
+  **cooldown** (`max(interval x 4, 1 hour)`) stands between two tasks for
+  the same failure. A recurrence is also suppressed while the chain the
+  first occurrence started is still unresolved: the investigation, the
+  review of it, or the apply step waiting for a human. Without both rules, a
+  permanently failing workflow would produce a new task, a new review and a
+  new approval every fifteen minutes.
 - **One task per step of a chain.** A unique index on `tasks(dedupe_key)`
   means a replayed handoff cannot stack a second step. The apply step uses
   `apply:<review task id>` and the rework step uses `rework:<review task id>`.
@@ -331,6 +335,15 @@ allocation is gone. The bounds are:
   and raises no second approval.
 - **Delegation depth.** `MAX_DELEGATION_DEPTH = 2` in `src/agents/tools.ts`.
   A delegation beyond that is refused with an error the model can report.
+- **Replay-safe tools, keyed on the tool call.** A tool that writes a row
+  records the id of the tool call that wrote it (`tool_task_id`, unique).
+  pi-durable reruns a call that was interrupted when the tool declares
+  `replay: "safe"`, and the rerun finds the row the first attempt made
+  instead of writing a second one. The delegation, the approval request, the
+  knowledge entry and the report are all keyed this way. The default
+  (`replay: "unsafe"`) would tell the model the call was interrupted and let
+  it decide — which is right for a call with an unknown effect, and wrong for
+  one that writes a row.
 - **Attempt limits.** Every task has `max_attempts` (default 2). A reviewer
   who asks for changes beyond the limit escalates to a human instead of
   looping; a stalled task beyond the limit fails with a recorded reason.

@@ -11,7 +11,9 @@ export class SimulatedExecutionBackend implements ExecutionBackend {
 	readonly name = "simulated";
 
 	async submit(spec: ExecutionSpec, _context: ExecutionContext): Promise<ExecutionHandle> {
-		const runId = `sim-${spec.requestedAt ?? Date.now()}-${hash(spec.command)}`;
+		// The run id is derived from the key, so a re-issue of the same action
+		// is recognisable as the same action.
+		const runId = `sim-${spec.idempotencyKey ?? hash(spec.command)}`;
 		return {
 			runId,
 			status: "succeeded",

@@ -24,6 +24,12 @@ export type ExecutionSpec = {
 	notes?: string;
 	/** When the action was requested; backends that cannot return a run id use it to find one. */
 	requestedAt?: number;
+	/**
+	 * The key that identifies this action. A backend that can deduplicate
+	 * should use it, so that re-issuing an action whose outcome is unknown
+	 * does not run it twice.
+	 */
+	idempotencyKey?: string;
 };
 
 export type ExecutionHandle = {

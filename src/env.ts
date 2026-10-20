@@ -9,8 +9,20 @@ export interface Env {
 	ORG_AGENTS: DurableObjectNamespace<import("./agents/org-agent.ts").OrgAgent>;
 	/** Shared operational state: agents, goals, tasks, obligations, approvals, knowledge, events. */
 	ORG_DB: D1Database;
-	/** Workers AI binding. The Free plan grants 10,000 neurons per day. */
-	AI: Ai;
+	/**
+	 * Workers AI binding. The Free plan grants 10,000 neurons per day.
+	 *
+	 * A deployment that does not have a Workers AI binding can use the
+	 * account credentials below instead: the same models, reached over the
+	 * Cloudflare REST API rather than through a binding. That is also what
+	 * makes the organization portable to a runtime that does not implement
+	 * the binding.
+	 */
+	AI?: Ai;
+	/** A Cloudflare account id, for the binding-free model path. */
+	CF_ACCOUNT_ID?: string;
+	/** An API token with Workers AI Read and AI Gateway Run. */
+	CF_API_TOKEN?: string;
 	/** Bearer token for the management API. Never logged. */
 	ORG_API_TOKEN: string;
 	/** Shared secret for inbound webhooks. Never logged. */
@@ -26,8 +38,9 @@ export interface Env {
 	/** Model thinking level: off | minimal | low | medium | high. */
 	THINKING_LEVEL: string;
 	/**
-	 * Model provider: "workers-ai" (the default) or "faux" for a
-	 * deterministic stand-in used by the tests and by credential-free
+	 * Model provider: "workers-ai" (the default), "cloudflare-rest" (the
+	 * same models over the Cloudflare REST API, with no binding), or "faux"
+	 * for a deterministic stand-in used by the tests and by credential-free
 	 * demonstrations.
 	 *
 	 * The model ids below are plain strings. A Workers AI id such as

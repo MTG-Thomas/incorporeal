@@ -230,6 +230,9 @@ Where a value is set:
 | `GITHUB_REPO` | No | none | The repository, as `owner/name`. Required for the GitHub repository check and for the GitHub Actions backend. |
 | `GITHUB_WORKFLOW` | No | none | The workflow file to dispatch, as a path relative to the repository root. Required for the GitHub Actions backend. |
 | `GITHUB_API_BASE` | No | `https://api.github.com` | The GitHub API root. Change it for GitHub Enterprise. |
+| `MODEL_PROVIDER` | No | `workers-ai` | `workers-ai` (the AI binding), `cloudflare-rest` (the same models over the Cloudflare REST API, with no binding) or `faux` (a deterministic stand-in). |
+| `CF_ACCOUNT_ID` | With `cloudflare-rest` | none | A Cloudflare account id. Used instead of the `AI` binding. |
+| `CF_API_TOKEN` | With `cloudflare-rest` | none | An API token with Workers AI Read and AI Gateway Run. Used instead of the `AI` binding. |
 | `ORG_ENV` | No | `local` | A label. It is echoed by `GET /api/health` and is available for tagging in logs and events. Set it to `production` for a real deployment. |
 
 An external model provider needs no secret in `.dev.vars`: put a

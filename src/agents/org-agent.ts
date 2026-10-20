@@ -116,8 +116,36 @@ export class OrgAgent extends DurableObject<Env> {
 					const faux = createFauxProvider(parseFauxSpec(self.env.FAUX_SCRIPT));
 					models.setProvider(faux.provider);
 					self.#modelRef = { provider: FAUX_PROVIDER_ID, id: FAUX_MODEL_ID };
-				} else {
+				} else if (
+					self.env.MODEL_PROVIDER === "cloudflare-rest" &&
+					self.env.CF_ACCOUNT_ID &&
+					self.env.CF_API_TOKEN
+				) {
+					// The same models, reached over the Cloudflare REST API.
+					// No binding is involved, so this works on a runtime that
+					// does not implement one.
+					const ai = createAI({
+						accountId: self.env.CF_ACCOUNT_ID,
+						apiToken: self.env.CF_API_TOKEN
+					});
+					models.setProvider(ai.provider);
+					self.#modelRef = { provider: "cloudflare", id: self.#modelId };
+				} else if (self.env.AI) {
 					const ai = createAI({ binding: self.env.AI });
+					models.setProvider(ai.provider);
+					self.#modelRef = { provider: "cloudflare", id: self.#modelId };
+				} else {
+					// No binding and no account credentials: there is no model
+					// to call, and the run will say so rather than fail
+					// obscurely.
+					logWarn("no model provider is configured", {
+						agentId: self.#agentId,
+						modelProvider: self.env.MODEL_PROVIDER
+					});
+					const ai = createAI({
+						accountId: self.env.CF_ACCOUNT_ID ?? "",
+						apiToken: self.env.CF_API_TOKEN ?? ""
+					});
 					models.setProvider(ai.provider);
 					self.#modelRef = { provider: "cloudflare", id: self.#modelId };
 				}

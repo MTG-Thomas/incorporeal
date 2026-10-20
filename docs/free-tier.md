@@ -306,6 +306,13 @@ The execution backend is pluggable (`src/execution/index.ts`).
 Cloudflare Containers are deliberately not used: they are a Workers Paid
 feature and would make the project require a paid subscription.
 
+The model binding is not required either. `MODEL_PROVIDER=cloudflare-rest`
+reaches the same models over the Cloudflare REST API with an account id and
+an API token, so a deployment on a runtime that does not implement the
+Workers AI binding still works. The allocation is the same either way: it
+is Cloudflare's neurons that are spent, and the same 10,000 per day on the
+Free plan.
+
 ## When an allocation is exhausted
 
 This section describes what this codebase actually does. Where a limit is

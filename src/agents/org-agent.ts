@@ -50,7 +50,8 @@ import { sendExecution } from "../execution/run.ts";
 import type { Env } from "../env.ts";
 import { describeError, logError, logInfo, logWarn } from "../logging.ts";
 import { AssignmentDoc } from "./docs.ts";
-import { createFauxProvider, FAUX_MODEL_ID, FAUX_PROVIDER_ID, parseFauxSpec } from "./faux.ts";
+import { FAUX_MODEL_ID, FAUX_PROVIDER_ID } from "./faux.ts";
+import { resolveProvider } from "./providers.ts";
 import { loadIdentity, type AgentIdentity, ensureBuiltInAgents } from "./identity.ts";
 import { createOrgExtension } from "./tools.ts";
 import { describeAction, type ApprovedAction } from "../policy/action.ts";
@@ -90,6 +91,7 @@ export class OrgAgent extends DurableObject<Env> {
 	#modelProvider = "cloudflare";
 	#thinkingLevel = "low";
 	#modelRef: { provider: string; id: string } | null = null;
+	#resolvedModelId: string | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -113,49 +115,27 @@ export class OrgAgent extends DurableObject<Env> {
 						notifyTaskCompleted: (taskId) => self.#notifyCoordinator(taskId)
 					})
 				);
-				const models = createModels();
-				if (self.env.MODEL_PROVIDER === "faux") {
-					const faux = createFauxProvider(parseFauxSpec(self.env.FAUX_SCRIPT));
-					models.setProvider(faux.provider);
-					self.#modelRef = { provider: FAUX_PROVIDER_ID, id: FAUX_MODEL_ID };
-					self.#modelProvider = FAUX_PROVIDER_ID;
-				} else if (
-					self.env.MODEL_PROVIDER === "cloudflare-rest" &&
-					self.env.CF_ACCOUNT_ID &&
-					self.env.CF_API_TOKEN
-				) {
-					// The same models, reached over the Cloudflare REST API.
-					// No binding is involved, so this works on a runtime that
-					// does not implement one.
-					const ai = createAI({
-						accountId: self.env.CF_ACCOUNT_ID,
-						apiToken: self.env.CF_API_TOKEN
-					});
-					models.setProvider(ai.provider);
-					self.#modelRef = { provider: "cloudflare", id: self.#modelId };
-				} else if (self.env.AI) {
-					const ai = createAI({ binding: self.env.AI });
-					models.setProvider(ai.provider);
-					self.#modelRef = { provider: "cloudflare", id: self.#modelId };
-				} else {
-					// No binding and no account credentials: there is no model
-					// to call, and the run will say so rather than fail
-					// obscurely.
-					logWarn("no model provider is configured", {
-						agentId: self.#agentId,
-						modelProvider: self.env.MODEL_PROVIDER
-					});
-					const ai = createAI({
-						accountId: self.env.CF_ACCOUNT_ID ?? "",
-						apiToken: self.env.CF_API_TOKEN ?? ""
-					});
-					models.setProvider(ai.provider);
-					self.#modelRef = { provider: "cloudflare", id: self.#modelId };
-				}
+				// The provider is resolved once per isolate, and it fails
+				// closed: a missing credential refuses the run rather than
+				// quietly sending the work somewhere else.
+				const resolved = await resolveProvider(
+					self.env,
+					self.env.ORG_DB,
+					self.#modelId,
+					self.#agentId
+				);
+				self.#modelRef = { provider: resolved.id, id: resolved.modelId };
+				self.#resolvedModelId = resolved.modelId;
+				self.#modelProvider = resolved.id;
+				logInfo("the model provider is resolved", {
+					agentId: self.#agentId,
+					provider: resolved.id,
+					source: resolved.source
+				});
 				return Harness.open(
 					storage,
 					{
-						models,
+						models: resolved.models,
 						registry,
 						// Pi keeps idle caches behind timers, and a pending timer
 						// stops a Durable Object from hibernating. The object's
@@ -212,8 +192,7 @@ export class OrgAgent extends DurableObject<Env> {
 		try {
 			// The faux provider serves one model of its own, so the agent's row
 			// does not choose it.
-			const modelId =
-				this.#modelProvider === FAUX_PROVIDER_ID ? FAUX_MODEL_ID : identity.model;
+			const modelId = this.#resolvedModelId ?? identity.model;
 			const pi = await this.harness.pi();
 			const root = await pi.root(BACKGROUND_CONTEXT);
 			const current = await root.agent(BACKGROUND_CONTEXT);

@@ -40,6 +40,17 @@
 	"ai": {
 		"binding": "AI"
 	},
+	// Local development pretends to be an authenticated operator, so the
+	// same identity path is exercised without a Cloudflare account. In a
+	// deployment this comes from Cloudflare Access instead.
+	"access": {
+		"dev": {
+			"aud": "incorporeal-dev",
+			"identity": {
+				"email": "operator@localhost"
+			}
+		}
+	},
 	// The only cron trigger in the system. It does nothing but hand the
 	// obligation sweep to the coordinator Durable Object, because a Workers
 	// Free invocation gets 10 ms of CPU while a Durable Object gets 30 s.

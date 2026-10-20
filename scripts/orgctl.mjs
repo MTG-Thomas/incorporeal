@@ -14,12 +14,13 @@
  */
 
 import process from "node:process";
+import { readFile } from "node:fs/promises";
 
 /* ── configuration ──────────────────────────────────────────────────────── */
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-const BOOLEAN_FLAGS = new Set(["json", "help"]);
+const BOOLEAN_FLAGS = new Set(["json", "help", "stdin"]);
 const VALUE_FLAGS = new Set([
 	"url",
 	"token",
@@ -36,7 +37,9 @@ const VALUE_FLAGS = new Set([
 	"title",
 	"description",
 	"to",
-	"limit"
+	"limit",
+	"provider",
+	"file"
 ]);
 
 /* ── tiny helpers ──────────────────────────────────────────────────────── */
@@ -701,6 +704,74 @@ async function commandSuccessor(config, flags, positional) {
 
 /* ── dispatch ──────────────────────────────────────────────────────────── */
 
+/** The provider credentials the organization holds. Metadata only. */
+async function commandCredentials(config, flags) {
+	const payload = await api(config, "GET", "/api/providers/credentials");
+	if (flags.json) return payload;
+	const credentials = asArray(payload?.credentials);
+	write(bold("Provider credentials"));
+	write("");
+	printTable(
+		["PROVIDER", "TYPE", "UPDATED"],
+		credentials.map((row) => [
+			row.providerId ?? "-",
+			row.type ?? "-",
+			row.updatedAt ? new Date(Number(row.updatedAt)).toISOString() : "-"
+		])
+	);
+	return payload;
+}
+
+/** Store a provider credential. */
+async function commandCredentialSet(config, flags) {
+	const provider = flags.provider;
+	if (!provider) throw new UsageError("--provider is required");
+	let text;
+	if (flags.stdin) {
+		text = await readStdin();
+	} else if (flags.file) {
+		text = await readFile(flags.file, "utf8");
+	} else {
+		throw new UsageError("give --file <path> or --stdin");
+	}
+	let credential;
+	try {
+		credential = JSON.parse(text);
+	} catch (error) {
+		throw new CliError(`the credential is not valid JSON: ${error.message}`);
+	}
+	if (!credential || typeof credential !== "object" || !("type" in credential)) {
+		throw new CliError('the credential must be an object with a "type" of "api_key" or "oauth"');
+	}
+	const payload = await api(config, "POST", `/api/providers/credentials/${encodeURIComponent(provider)}`, {
+		credential
+	});
+	if (!flags.json) {
+		write(`Stored the ${credential.type} credential for ${provider}.`);
+	}
+	return payload;
+}
+
+/** Remove a provider credential. */
+async function commandCredentialRemove(config, flags) {
+	const provider = flags.provider;
+	if (!provider) throw new UsageError("--provider is required");
+	const payload = await api(
+		config,
+		"DELETE",
+		`/api/providers/credentials/${encodeURIComponent(provider)}`
+	);
+	if (!flags.json) write(`Removed the credential for ${provider}.`);
+	return payload;
+}
+
+/** Read the standard input, for a credential that is piped in. */
+async function readStdin() {
+	const chunks = [];
+	for await (const chunk of process.stdin) chunks.push(chunk);
+	return Buffer.concat(chunks).toString("utf8");
+}
+
 const COMMANDS = {
 	agents: {
 		summary: "list the agents",
@@ -781,6 +852,21 @@ const COMMANDS = {
 		summary: "replace an agent with a successor that inherits its duties",
 		usage: "orgctl successor <agent-id> --to <new-id>",
 		run: (config, flags, positional) => commandSuccessor(config, flags, positional)
+	},
+	credentials: {
+		summary: "list the model provider credentials (metadata only)",
+		usage: "orgctl credentials",
+		run: (config, flags) => commandCredentials(config, flags)
+	},
+	"credential-set": {
+		summary: "store a provider credential (a key, or a ChatGPT subscription token)",
+		usage: "orgctl credential-set --provider <id> --file <path> | --stdin",
+		run: (config, flags) => commandCredentialSet(config, flags)
+	},
+	"credential-remove": {
+		summary: "remove a provider credential",
+		usage: "orgctl credential-remove --provider <id>",
+		run: (config, flags) => commandCredentialRemove(config, flags)
 	}
 };
 

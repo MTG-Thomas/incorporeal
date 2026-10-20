@@ -19,7 +19,7 @@ import { describeError, logError, logInfo } from "./logging.ts";
 export { OrgAgent };
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 		try {
 			if (url.pathname === "/" || url.pathname === "/api") {
@@ -37,7 +37,7 @@ export default {
 				);
 			}
 			await ensureBuiltInAgents(env.ORG_DB, env);
-			const response = await handleApi(request, env, url);
+			const response = await handleApi(request, env, url, ctx);
 			if (response) return response;
 			return new Response(JSON.stringify({ error: "not found" }), {
 				status: 404,

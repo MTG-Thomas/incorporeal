@@ -21,6 +21,14 @@ export interface Env {
 	AI?: Ai;
 	/** A Cloudflare account id, for the binding-free model path. */
 	CF_ACCOUNT_ID?: string;
+	/**
+	 * The emails allowed to drive the organization, comma separated.
+	 *
+	 * Only meaningful when Cloudflare Access is in front of the Worker: the
+	 * identity Access asserts is checked against this list. Empty means any
+	 * authenticated identity, plus any caller with the management token.
+	 */
+	CF_ACCESS_ALLOWED_EMAILS?: string;
 	/** An API token with Workers AI Read and AI Gateway Run. */
 	CF_API_TOKEN?: string;
 	/** Bearer token for the management API. Never logged. */
@@ -52,6 +60,24 @@ export interface Env {
 	MODEL_PROVIDER: string;
 	/** The script the faux provider answers from, as JSON. */
 	FAUX_SCRIPT?: string;
+	/** The API key for an OpenAI-compatible service such as OpenCode Go. */
+	OPENCODE_API_KEY?: string;
+	/**
+	 * The base URL of that service, including any path prefix.
+	 *
+	 * OpenCode Go's OpenAI-compatible base is
+	 * `https://opencode.ai/inference/go/openai/v1`. The service serves several
+	 * API families from the same origin, and this provider speaks the Chat
+	 * Completions one: the models served over the Responses, Anthropic and
+	 * Google families need a different client.
+	 */
+	OPENCODE_GO_BASE_URL?: string;
+	/**
+	 * The models that service serves, as JSON: a list of
+	 * `{"id": "...", "name": "...", "contextWindow": 128000, "maxTokens": 8192}`.
+	 * A comma-separated list of ids also works.
+	 */
+	OPENCODE_GO_MODELS?: string;
 
 	/** Execution backend: simulated | github-actions | none. */
 	EXECUTION_BACKEND: string;

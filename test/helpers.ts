@@ -2,6 +2,7 @@
  * Helpers for the integration tests.
  */
 import { env } from "cloudflare:workers";
+import { createExecutionContext } from "cloudflare:test";
 import worker from "../src/index.ts";
 import { listTasks } from "../src/db/org.ts";
 import type { Env } from "../src/env.ts";
@@ -19,7 +20,7 @@ export async function call(
 	if (init.webhookSecret) headers.set("x-webhook-secret", init.webhookSecret);
 	if (init.body) headers.set("content-type", "application/json");
 	const request = new Request(`https://organization.test${path}`, { ...init, headers });
-	return worker.fetch(request, env as unknown as Env);
+	return worker.fetch(request, env as unknown as Env, createExecutionContext());
 }
 
 /** Call the API and parse the JSON body. */

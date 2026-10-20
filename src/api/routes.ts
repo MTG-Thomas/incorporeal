@@ -8,7 +8,16 @@
  */
 import { findAgentByRole, getAgent, getApproval, getGoal, listAgents, listApprovals, listEvents, listGoals, listKnowledge, listObligations, listTasks, createGoal, createObligation, decideApproval, getTask, recordEvent, upsertAgent } from "../db/org.ts";
 import { defaultPermissionsForRole } from "../policy/permissions.ts";
-import { isAuthorized, isWebhookAuthorized, unauthorized } from "../auth.ts";
+import { describeCredentials, putCredential, removeCredential } from "../agents/credentials.ts";
+import {
+	accessIdentity,
+	callerName,
+	type Caller,
+	isAllowed,
+	isWebhookAuthorized,
+	unauthorized,
+	forbidden
+} from "../auth.ts";
 import type { Env } from "../env.ts";
 import { describeError, logError, logInfo } from "../logging.ts";
 import type { TaskRow } from "../db/types.ts";
@@ -67,10 +76,15 @@ async function agentIdForRole(env: Env, role: string): Promise<string | null> {
 export async function handleApi(
 	request: Request,
 	env: Env,
-	url: URL
+	url: URL,
+	ctx?: ExecutionContext
 ): Promise<Response | undefined> {
 	const path = url.pathname;
 	if (!path.startsWith("/api/") && path !== "/api") return undefined;
+
+	// Who is calling? When Cloudflare Access is in front of the Worker, it
+	// has already decided the request is authenticated, and it knows who.
+	const caller = ctx ? await accessIdentity(ctx) : null;
 
 	if (path === "/api/health") {
 		return json({ status: "ok", env: env.ORG_ENV });
@@ -83,10 +97,14 @@ export async function handleApi(
 		return handleWebhook(request, env, path);
 	}
 
-	if (!isAuthorized(request, env)) return unauthorized();
+	if (!isAllowed(caller, request, env)) {
+		return caller && !caller.isService ? forbidden("this identity is not allowed") : unauthorized();
+	}
 
 	const segments = path.split("/").filter(Boolean); // ["api", ...]
 	const [, resource, id, action] = segments;
+	// The caller, for the routes that record who did something.
+	const operator = callerName(caller, undefined);
 
 	switch (resource) {
 		case "agents":
@@ -107,9 +125,11 @@ export async function handleApi(
 		case "obligations":
 			return handleObligations(request, env, id, action);
 		case "approvals":
-			return handleApprovals(request, env, id);
+			return handleApprovals(request, env, id, caller);
 		case "knowledge":
 			return json({ knowledge: await listKnowledge(env.ORG_DB, 100) });
+		case "providers":
+			return handleProviders(request, env, segments);
 		case "sweep": {
 			// Both verbs work: the sweep is idempotent, and a GET is easier to
 			// paste into a browser.
@@ -302,6 +322,57 @@ async function handleTasks(
 	return json({ task });
 }
 
+/* ── provider credentials ───────────────────────────────────────────────── */
+
+/**
+ * The credentials the organization holds for its model providers.
+ *
+ * Reading returns **metadata only**: which providers are configured, of what
+ * kind, and when they last changed. The credential itself is never returned
+ * by the API — it is a secret, and the only thing that needs it is the agent
+ * that is about to call the provider.
+ *
+ * The routes are `/api/providers/credentials` and
+ * `/api/providers/credentials/{provider}`.
+ */
+async function handleProviders(
+	request: Request,
+	env: Env,
+	segments: readonly string[]
+): Promise<Response> {
+	if (segments[2] !== "credentials") return notFound("no such provider resource");
+	const providerId = segments[3];
+	if (request.method === "GET" && !providerId) {
+		return json({ credentials: await describeCredentials(env.ORG_DB) });
+	}
+	if (request.method === "POST" && providerId) {
+		const body = await readJson(request);
+		const credential = body.credential as { type?: string; key?: string } | undefined;
+		if (!credential || (credential.type !== "api_key" && credential.type !== "oauth")) {
+			return badRequest(
+				'credential must be an object with a type of "api_key" or "oauth"'
+			);
+		}
+		await putCredential(env.ORG_DB, providerId, credential as never);
+		await recordEvent(env.ORG_DB, {
+			correlationId: `cor_${providerId}`,
+			type: "provider.credential.set",
+			payload: { provider: providerId, credential_type: credential.type }
+		});
+		return json({ provider: providerId, stored: true });
+	}
+	if (request.method === "DELETE" && providerId) {
+		await removeCredential(env.ORG_DB, providerId);
+		await recordEvent(env.ORG_DB, {
+			correlationId: `cor_${providerId}`,
+			type: "provider.credential.removed",
+			payload: { provider: providerId }
+		});
+		return json({ provider: providerId, removed: true });
+	}
+	return badRequest("use GET to list, POST to store, or DELETE to remove");
+}
+
 /* ── obligations ────────────────────────────────────────────────────────── */
 
 async function handleObligations(
@@ -344,12 +415,19 @@ async function handleObligations(
 
 /* ── approvals ──────────────────────────────────────────────────────────── */
 
-async function handleApprovals(request: Request, env: Env, approvalId: string | undefined): Promise<Response> {
+async function handleApprovals(
+	request: Request,
+	env: Env,
+	approvalId: string | undefined,
+	caller: Caller | null
+): Promise<Response> {
 	if (request.method === "POST" && approvalId) {
 		const body = await readJson(request);
 		const decision = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : null;
 		if (!decision) return badRequest("decision must be \"approve\" or \"reject\"");
-		const decidedBy = typeof body.decidedBy === "string" ? body.decidedBy : "operator";
+		const claimed = typeof body.decidedBy === "string" ? body.decidedBy : undefined;
+		// A verified Access identity wins over a name in the body.
+		const decidedBy = callerName(caller, claimed);
 		const before = await getApproval(env.ORG_DB, approvalId);
 		if (!before) return notFound(`no such approval: ${approvalId}`);
 		if (before.status !== "pending") {

@@ -539,6 +539,23 @@ conventions, the design constraints, and the rule that a behavioural change
 needs a test that would fail without it. It is written in the same voice as
 the instructions the agents give each other.
 
+## Providers and identity
+
+The model provider is configuration, not architecture: Workers AI, the
+Cloudflare REST API, an OpenAI-compatible service, a ChatGPT subscription or
+a deterministic stand-in. Every one of them **fails closed** — a missing
+credential refuses the run rather than falling back to another provider,
+because a silent fallback would send the work somewhere the operator did not
+choose. The credentials live in the shared store so that a subscription's
+rotating token can be refreshed in place; the API reports only which
+providers are configured. [docs/providers.md](providers.md).
+
+The deployment is gated in two layers: Cloudflare Access in front of the
+Worker, and the management token inside it. The identity Access asserts is
+what gets recorded when something consequential happens, so an approval names
+a person the identity provider vouched for rather than a string anyone with
+the token can claim. [docs/access.md](access.md).
+
 ## Running on another Durable Objects runtime
 
 The organization's load-bearing pieces are a Durable Object with SQLite

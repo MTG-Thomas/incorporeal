@@ -259,6 +259,22 @@ test/                 integration tests, inside workerd
 docs/                 architecture, ADRs, the free-tier budget, the runbook
 ```
 
+## Authentication
+
+The deployment is gated in two layers. **Cloudflare Access** sits in front of
+the Worker, so an unauthenticated visitor never reaches the application, and
+the Worker learns *who* the caller is — which is what an approval records.
+The **management token** still applies: Access answers "is this an
+authenticated human?" and the token answers "is this an authorized
+management client?", and both have to agree. See
+[docs/access.md](docs/access.md).
+
+The model provider is a separate concern, and equally gated: the API key or
+the ChatGPT subscription credential is written through the management API,
+stored in the shared store, read only by the agent that is about to call the
+provider, and never returned by the API. See
+[docs/providers.md](docs/providers.md).
+
 ## Running it somewhere else
 
 The organization was also stood up on

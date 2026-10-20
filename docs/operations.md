@@ -7,6 +7,27 @@ what you do about them.
 Every command and route below is taken from the repository. Where a command
 depends on the deployed state, the state it depends on is stated.
 
+## 0. The current deployment
+
+This organization is deployed at
+
+```
+https://incorporeal.midtown-technology-group.workers.dev
+```
+
+with its own D1 database (`incorporeal`, id
+`7a2b6d43-3a63-4586-bd1e-29c9238ce06c`). The management token and the
+webhook secret are set as Worker secrets; the token is in the repository's
+gitignored `.env` together with the URL, so the CLI finds both without any
+setup:
+
+```sh
+node scripts/orgctl.mjs agents
+```
+
+Everything below is how to create a deployment like it, or to change this
+one.
+
 ## 1. Prerequisites
 
 | Requirement | Detail |

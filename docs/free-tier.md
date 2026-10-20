@@ -121,6 +121,20 @@ This is the direct reason for two design choices:
   stored on the row, and `claimObligation()` only runs an obligation whose
   `next_run_at` has passed. The sweep is a scheduler that consults the
   obligation, not a busy loop that polls one thing per minute.
+- **A failure that is still there does not buy a new chain every sweep.** An
+  obligation remembers one record per finding it has acted on, and a
+  recurrence is suppressed while the chain the first occurrence started is
+  still unresolved — the investigation, the review of it, or the apply step
+  waiting for a human — and for a cooldown after that. Without both rules a
+  permanently failing workflow would produce a task, a review and an
+  approval every fifteen minutes, which is the most expensive loop the
+  design could have.
+- **A replayed tool call does not write a second row.** A tool that writes
+  records the id of the tool call that wrote it, and declares itself
+  replay-safe, so a rerun after an interruption finds the row the first
+  attempt made. On a Free plan, where an eviction is a normal event rather
+  than an exception, this is what keeps a retry from costing a second
+  model call and a second approval.
 
 ### What a busy day costs
 

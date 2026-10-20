@@ -481,6 +481,8 @@ The common reasons:
 | `permission denied: this agent may not use ...` | A tool call was refused. | The permission set is data in D1. Check the agent's row; see `src/policy/permissions.ts` for what each role may do. |
 | `task tool-call budget exhausted (n/m)` | The task made more tool calls than `max_tool_calls` allows. | Raise the agent's `max_tool_calls` in D1, or split the work. |
 | `agent daily tool-call budget exhausted (n/200)` | The agent made more than 200 tool calls in a day. | Raise `DAILY_TOOL_CALL_LIMIT` in `src/policy/budget.ts`, or let the day roll over. |
+| `running anything externally needs an approved human request` | The task asked to run something outside the organization with no approved request attached. | This is the gate, not a fault. Raise an approval for the task (`org_request_approval` from the coordinator, or a row in `approvals`) and assign the task again. |
+| `the task spent n tokens, over its budget of m` | The run cost more tokens than the agent's `max_tokens` allows. | Raise `max_tokens` on the agent's row, or narrow the task. |
 | `execution is disabled for this deployment` | `EXECUTION_BACKEND=none`. | Set the backend to `simulated` or `github-actions`. |
 
 A failed task does not automatically retry. The sweep re-issues open tasks,

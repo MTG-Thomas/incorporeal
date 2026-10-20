@@ -292,6 +292,9 @@ Authentication: `Authorization: Bearer $ORG_API_TOKEN` on every route except
 | `POST` | `/api/webhooks/{source}` | `X-Webhook-Secret` | An inbound event becomes a goal, which the coordinator turns into work. Body: `{"title":"...", "description":"..."}` (both optional). Returns `201`. |
 | `POST` | `/api/sweep` | bearer | Run the coordinator's sweep now. The handler does not check the method, so `GET /api/sweep` works too — which is what `orgctl sweep` uses. |
 | `GET` | `/api/knowledge` | bearer | The shared knowledge base: decisions, conventions and findings. |
+| `GET` | `/api/providers/credentials` | bearer | The model providers that have a credential. Metadata only: the credential itself is never returned. |
+| `POST` | `/api/providers/credentials/{provider}` | bearer | Store a credential: `{"credential": {"type": "api_key" or "oauth", ...}}`. |
+| `DELETE` | `/api/providers/credentials/{provider}` | bearer | Remove a credential. |
 
 `GET /` and `GET /api` return a short JSON description of the service and
 need no token.

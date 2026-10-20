@@ -266,7 +266,7 @@ Authentication: `Authorization: Bearer $ORG_API_TOKEN` on every route except
 | `GET` | `/api/obligations` | bearer | The recurring obligations, with their intervals and next run times. |
 | `POST` | `/api/obligations` | bearer | Create a recurring obligation. Body: `{"name":"...", "intervalSeconds":900, "check":{...}}`. `intervalSeconds` must be at least 60; the default is 900. The owner is the coordinator. The `check` object is stored as the obligation's `check_spec`; the check that actually runs is selected by `REPO_PROVIDER`, not by this field. |
 | `POST` | `/api/obligations/{id}/run` | bearer | Run the coordinator's sweep now, instead of waiting for the cron trigger. Note that this runs the **whole** sweep — all due obligations and the stalled-task check — not only the named obligation. |
-| `GET` | `/api/approvals` | bearer | The approval requests, with their status and reason. |
+| `GET` | `/api/approvals` | bearer | The approval requests, with their status, their reason, and the action each one authorises. |
 | `POST` | `/api/approvals/{id}` | bearer | Decide an approval. Body: `{"decision":"approve"\|"reject", "decidedBy":"name"}`. Approving moves the task to `assigned` and starts it; rejecting cancels it. |
 | `POST` | `/api/webhooks/{source}` | `X-Webhook-Secret` | An inbound event becomes a goal, which the coordinator turns into work. Body: `{"title":"...", "description":"..."}` (both optional). Returns `201`. |
 | `POST` | `/api/sweep` | bearer | Run the coordinator's sweep now. The handler does not check the method, so `GET /api/sweep` works too — which is what `orgctl sweep` uses. |
@@ -482,6 +482,8 @@ The common reasons:
 | `task tool-call budget exhausted (n/m)` | The task made more tool calls than `max_tool_calls` allows. | Raise the agent's `max_tool_calls` in D1, or split the work. |
 | `agent daily tool-call budget exhausted (n/200)` | The agent made more than 200 tool calls in a day. | Raise `DAILY_TOOL_CALL_LIMIT` in `src/policy/budget.ts`, or let the day roll over. |
 | `running anything externally needs an approved human request` | The task asked to run something outside the organization with no approved request attached. | This is the gate, not a fault. Raise an approval for the task (`org_request_approval` from the coordinator, or a row in `approvals`) and assign the task again. |
+| `the approved request does not name an action` | The approval on the task does not say what it authorises. | Approve an approval that names the action: `{"command": "npm test"}`. An approval that names no action authorises nothing. |
+| `the approved request authorises "...", not "..."` | The action the agent asked for is not the one a human approved. | Either the agent asked for more than it was given, or the approval names the wrong action. Adjust the approval to the action that was reviewed. |
 | `the task spent n tokens, over its budget of m` | The run cost more tokens than the agent's `max_tokens` allows. | Raise `max_tokens` on the agent's row, or narrow the task. |
 | `execution is disabled for this deployment` | `EXECUTION_BACKEND=none`. | Set the backend to `simulated` or `github-actions`. |
 

@@ -53,6 +53,7 @@ import { AssignmentDoc } from "./docs.ts";
 import { createFauxProvider, FAUX_MODEL_ID, FAUX_PROVIDER_ID, parseFauxSpec } from "./faux.ts";
 import { loadIdentity, type AgentIdentity, ensureBuiltInAgents } from "./identity.ts";
 import { createOrgExtension } from "./tools.ts";
+import { describeAction, type ApprovedAction } from "../policy/action.ts";
 
 /** How long an obligation sweep may hold its lock. */
 const OBLIGATION_LEASE_MS = 5 * 60_000;
@@ -86,6 +87,7 @@ export class OrgAgent extends DurableObject<Env> {
 	readonly lifecycle: Lifecycle<Env>;
 	#identity: Promise<AgentIdentity> | null = null;
 	#modelId = "";
+	#modelProvider = "cloudflare";
 	#thinkingLevel = "low";
 	#modelRef: { provider: string; id: string } | null = null;
 
@@ -116,6 +118,7 @@ export class OrgAgent extends DurableObject<Env> {
 					const faux = createFauxProvider(parseFauxSpec(self.env.FAUX_SCRIPT));
 					models.setProvider(faux.provider);
 					self.#modelRef = { provider: FAUX_PROVIDER_ID, id: FAUX_MODEL_ID };
+					self.#modelProvider = FAUX_PROVIDER_ID;
 				} else if (
 					self.env.MODEL_PROVIDER === "cloudflare-rest" &&
 					self.env.CF_ACCOUNT_ID &&
@@ -193,7 +196,45 @@ export class OrgAgent extends DurableObject<Env> {
 		// The organization is a set of agents: make sure its members exist
 		// before this one starts acting for it.
 		await ensureBuiltInAgents(this.env.ORG_DB, this.env);
+		await this.#applyModel(identity);
 		await this.#reconcile();
+	}
+
+	/**
+	 * Make the conversation use the agent's model.
+	 *
+	 * pi stores the model in the conversation's own agent record, so a model
+	 * that was stored when the conversation was created outlives a change to
+	 * the agent's row. The agent's model is a property of the agent, so it is
+	 * applied here — but only when it differs, because configuring writes.
+	 */
+	async #applyModel(identity: AgentIdentity): Promise<void> {
+		try {
+			// The faux provider serves one model of its own, so the agent's row
+			// does not choose it.
+			const modelId =
+				this.#modelProvider === FAUX_PROVIDER_ID ? FAUX_MODEL_ID : identity.model;
+			const pi = await this.harness.pi();
+			const root = await pi.root(BACKGROUND_CONTEXT);
+			const current = await root.agent(BACKGROUND_CONTEXT);
+			if (current.model?.provider === this.#modelProvider && current.model?.modelId === modelId) {
+				return;
+			}
+			await root.configure(
+				{ model: { provider: this.#modelProvider, modelId } },
+				BACKGROUND_CONTEXT
+			);
+			logInfo("the agent's model changed", {
+				agentId: this.#agentId,
+				from: current.model?.modelId,
+				to: modelId
+			});
+		} catch (error) {
+			logWarn("could not apply the agent's model", {
+				agentId: this.#agentId,
+				error: describeError(error)
+			});
+		}
 	}
 
 	/* ── public operations ───────────────────────────────────────────────── */
@@ -479,6 +520,8 @@ export class OrgAgent extends DurableObject<Env> {
 	 */
 	async #runTask(task: TaskRow): Promise<void> {
 		const operationId = operationIdFor(task.task_id);
+		const identity = await this.#resolveIdentity();
+		await this.#applyModel(identity);
 		const tokensBefore = await this.#usageTokens();
 		try {
 			const receipt = await this.harness.submit(await this.#buildPrompt(task), {
@@ -569,7 +612,11 @@ export class OrgAgent extends DurableObject<Env> {
 			return;
 		}
 		if (result.status !== "done") {
-			await this.#failTask(task, result.reason ?? "the model run did not produce an answer");
+			// A run that did not answer says why in pi's own record. Carry that
+			// detail into the task, or the operator sees only "model_error" and
+			// has to guess.
+			const detail = await this.#failureDetail();
+			await this.#failTask(task, detail ? `${result.reason ?? "failed"}: ${detail}` : (result.reason ?? "failed"));
 			await this.#notifyCoordinator(taskId);
 			return;
 		}
@@ -603,6 +650,42 @@ export class OrgAgent extends DurableObject<Env> {
 			}
 		}
 		await this.#notifyCoordinator(taskId);
+	}
+
+	/**
+	 * The error behind a run that did not answer.
+	 *
+	 * pi keeps the detail in the failed task's own outcome. This reads it
+	 * back, so the reason an agent could not finish is in the organization's
+	 * own record rather than only in a log line.
+	 */
+	async #failureDetail(): Promise<string | null> {
+		try {
+			const pi = await this.harness.pi();
+			const inspection = await pi.inspect(BACKGROUND_CONTEXT);
+			for (const task of inspection.tasks) {
+				const state = task.state as { status?: string; outcome?: { error?: { message?: string } } };
+				const message = state.outcome?.error?.message;
+				if (message) return message;
+			}
+		} catch {
+			// Fall through to the transcript.
+		}
+		try {
+			// The failed generation leaves its error in the transcript, as the
+			// assistant entry that carries it.
+			const entries = await this.harness.messages();
+			for (const entry of entries) {
+				const model = (entry as { model?: { errorMessage?: string }[] }).model ?? [];
+				for (const message of model) {
+					const error = (message as { errorMessage?: string }).errorMessage;
+					if (error) return error;
+				}
+			}
+		} catch {
+			// Nothing to add.
+		}
+		return null;
 	}
 
 	async #failTask(task: TaskRow, reason: string): Promise<void> {
@@ -767,6 +850,11 @@ export class OrgAgent extends DurableObject<Env> {
 	): Promise<{ action: string; detail?: string }> {
 		const engineer = await findAgentByRole(this.env.ORG_DB, "engineer");
 		if (!engineer) return { action: "no_engineer" };
+		// What the agent proposed to run, which is what the human is asked
+		// to approve. The reviewer's word wins over the engineer's, because
+		// the reviewer is the last one to look at it.
+		const proposed =
+			proposedAction(review.result) ?? (source ? proposedAction(source.result) : undefined);
 		// The task is created first: its key makes the step unique, so a
 		// replayed handoff finds it instead of creating a second one, and no
 		// second approval is raised for the same review.
@@ -777,8 +865,10 @@ export class OrgAgent extends DurableObject<Env> {
 			instruction: [
 				`The reviewer accepted the work of task ${source?.task_id ?? review.task_id}.`,
 				"",
-				"Apply it. Use org_run_execution to ask the execution backend to run the work;",
-				"it will not run until a human has approved the task.",
+				proposed
+					? `The approved action is: ${describeAction(proposed)}. Run exactly that with org_run_execution.`
+					: "No action was proposed, so nothing is authorised to run: ask for approval of a specific action with org_request_approval first.",
+				"it will not run until a human has approved that action.",
 				"Then call org_report_result with what was applied and the evidence."
 			].join("\n"),
 			assignee: engineer.agent_id,
@@ -794,7 +884,8 @@ export class OrgAgent extends DurableObject<Env> {
 		const approval = await createApproval(this.env.ORG_DB, {
 			taskId: null,
 			requestedBy: this.#agentId,
-			reason: `Apply the result of ${source?.task_id ?? review.task_id} to the repository.`
+			reason: `Apply the result of ${source?.task_id ?? review.task_id} to the repository.`,
+			...(proposed ? { action: proposed } : {})
 		});
 		await updateTask(this.env.ORG_DB, task.task_id, {
 			status: "blocked",
@@ -1137,6 +1228,16 @@ export class OrgAgent extends DurableObject<Env> {
 			}
 		}
 	}
+}
+
+/** The action a task's report proposed, if it proposed one. */
+function proposedAction(result: string | null): ApprovedAction | undefined {
+	const parsed = parseJson(result) as { action?: ApprovedAction };
+	const action = parsed.action;
+	if (!action || typeof action.command !== "string" || action.command.length === 0) {
+		return undefined;
+	}
+	return action;
 }
 
 /** The operation id of a task's run. Stable, so a replay rejoins the run. */

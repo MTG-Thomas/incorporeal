@@ -317,6 +317,17 @@ The execution backend is pluggable (`src/execution/index.ts`).
   has nothing to do with the Workers plan.
 - **`none`.** Every action is refused. Useful for a read-only deployment.
 
+**Not every Workers AI model is available on the Free plan.** The catalog a
+deployment sees is smaller than the one the SDK knows: a model that is paid
+only answers `AiError 5035 - not available on the Workers Free plan`, and the
+run fails with that reason. The default models here were checked against a
+Free account before they were chosen — `@cf/zai-org/glm-4.7-flash`,
+`@cf/openai/gpt-oss-120b`, `@cf/meta/llama-3.3-70b-instruct-fp8-fast` and
+`@cf/mistralai/mistral-small-3.1-24b-instruct` all answer on Free;
+`@cf/moonshotai/kimi-k2.7-code` does not. The failure is legible rather
+than silent: the task's result carries the provider's own message, because
+the agent reads the failed run's error out of the transcript.
+
 Cloudflare Containers are deliberately not used: they are a Workers Paid
 feature and would make the project require a paid subscription.
 

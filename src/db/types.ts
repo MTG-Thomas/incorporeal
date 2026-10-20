@@ -90,6 +90,8 @@ export type ApprovalRow = {
 	task_id: string | null;
 	requested_by: string;
 	reason: string;
+	/** The action this approval authorises, as JSON. */
+	requested_action: string | null;
 	status: ApprovalStatus;
 	decided_by: string | null;
 	decided_at: number | null;

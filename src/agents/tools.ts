@@ -30,6 +30,7 @@ import { selectExecutionBackend } from "../execution/index.ts";
 import { sendExecution } from "../execution/run.ts";
 import { logError, logInfo, logWarn, describeError } from "../logging.ts";
 import { checkAgentDailyBudget, checkTaskBudget } from "../policy/budget.ts";
+import { actionMatches, describeAction, parseAction } from "../policy/action.ts";
 import { hasPermission, parsePermissions, type Permission } from "../policy/permissions.ts";
 import { AssignmentDoc } from "./docs.ts";
 import type { AgentIdentity } from "./identity.ts";
@@ -189,6 +190,15 @@ export function createOrgExtension(context: OrgToolContext) {
 				kind: Type.String(),
 				uri: Type.Optional(Type.String()),
 				content: Type.Optional(Type.String())
+			})),
+			// The action this task proposes to run, if any. A human approves
+			// an action, not a task.
+			action: Type.Optional(Type.Object({
+				command: Type.String(),
+				args: Type.Optional(Type.Array(Type.String())),
+				backend: Type.Optional(Type.String()),
+				repo: Type.Optional(Type.String()),
+				branch: Type.Optional(Type.String())
 			}))
 		}),
 		// The task's own state makes this idempotent: a replay finds the
@@ -213,7 +223,8 @@ export function createOrgExtension(context: OrgToolContext) {
 				summary: args.summary,
 				findings: args.findings ?? [],
 				recommendation: args.recommendation ?? null,
-				evidence: args.evidence ?? []
+				evidence: args.evidence ?? [],
+				...(args.action ? { action: args.action } : {})
 			};
 			await updateTask(context.env.ORG_DB, taskId, {
 				status: "completed",
@@ -322,7 +333,16 @@ export function createOrgExtension(context: OrgToolContext) {
 		name: "org_request_approval",
 		description:
 			"Ask a human to authorize something. The task is blocked until a human approves it through the management API.",
-		parameters: Type.Object({ reason: Type.String() }),
+		parameters: Type.Object({
+			reason: Type.String(),
+			action: Type.Optional(Type.Object({
+				command: Type.String(),
+				args: Type.Optional(Type.Array(Type.String())),
+				backend: Type.Optional(Type.String()),
+				repo: Type.Optional(Type.String()),
+				branch: Type.Optional(Type.String())
+			}))
+		}),
 		// A replay finds the request this call made.
 		replay: "safe",
 		async execute(args, api, piContext): Promise<ToolOutput> {
@@ -333,7 +353,8 @@ export function createOrgExtension(context: OrgToolContext) {
 				taskId,
 				requestedBy: context.agentId,
 				reason: args.reason,
-				toolTaskId: String(api.taskId)
+				toolTaskId: String(api.taskId),
+				action: args.action
 			});
 			if (taskId) {
 				await updateTask(context.env.ORG_DB, taskId, {
@@ -350,7 +371,9 @@ export function createOrgExtension(context: OrgToolContext) {
 				payload: { approval_id: approval.approval_id, reason: args.reason }
 			});
 			return text(
-				`Approval ${approval.approval_id} requested. The task waits for a human decision.`
+				`Approval ${approval.approval_id} requested. The task waits for a human decision.${
+					args.action ? ` It authorises: ${describeAction(args.action)}.` : ""
+				}`
 			);
 		}
 	});
@@ -416,21 +439,41 @@ export function createOrgExtension(context: OrgToolContext) {
 			await chargeToolCall(context, taskId);
 			const task = await getTask(context.env.ORG_DB, taskId);
 			if (!task) throw new Error(`task ${taskId} no longer exists`);
+			const backend = selectExecutionBackend(context.env);
 			// Anything that reaches outside the organization needs a human,
 			// whatever the task says. The check is not conditional on the
 			// task's own flag: a task is data, and data does not grant
 			// authority. Only an approved request opens this door.
 			const approval = task.approval_id
-				? await context.env.ORG_DB.prepare("SELECT status FROM approvals WHERE approval_id = ?1")
+				? await context.env.ORG_DB.prepare(
+						"SELECT status, requested_action FROM approvals WHERE approval_id = ?1"
+					)
 						.bind(task.approval_id)
-						.first<{ status: string }>()
+						.first<{ status: string; requested_action: string | null }>()
 				: null;
 			if (approval?.status !== "approved") {
 				throw new Error(
 					"running anything externally needs an approved human request; this task has none, so the action is refused"
 				);
 			}
-			const backend = selectExecutionBackend(context.env);
+			// The approval names the action it authorises. A request that
+			// does not match it is refused, however approved the task is.
+			const approved = parseAction(approval.requested_action);
+			if (!approved) {
+				throw new Error(
+					"the approved request does not name an action, so nothing is authorised to run; ask for approval of a specific action"
+				);
+			}
+			const requested = {
+				command: args.command,
+				...(args.args && args.args.length > 0 ? { args: args.args } : {}),
+				...(backend.name ? { backend: backend.name } : {})
+			};
+			if (!actionMatches(approved, requested)) {
+				throw new Error(
+					`the approved request authorises "${describeAction(approved)}", not "${describeAction(requested)}"; the action is refused`
+				);
+			}
 			const { row, created } = await recordExecution(context.env.ORG_DB, {
 				taskId,
 				idempotencyKey: args.idempotency_key,

@@ -361,11 +361,17 @@ allocation is gone. The bounds are:
   120,000). The agent measures the tokens its run spent when the run
   settles; a task that passed its ceiling is failed with the reason rather
   than quietly costing more than planned.
-- **Human approval gates.** Anything that changes the outside world waits for
-  a human, and the check does not depend on the task's own flags: a task is
-  data, and data does not grant authority. `org_run_execution` requires an
-  **approved** request on the task, whatever the task says about it. The
-  `apply` step is the task that carries one, and it is created blocked until
+- **Human approval gates, bound to an action.** Anything that changes the
+  outside world waits for a human, and the check does not depend on the
+  task's own flags: a task is data, and data does not grant authority.
+  `org_run_execution` requires an **approved** request on the task, whatever
+  the task says about it. The approval also names the **action** it
+  authorises — the command, and optionally the arguments, the backend, the
+  repository and the branch — and the execution must match it. A human who
+  approved `npm test` has not approved `npm run deploy`, and an approval
+  that names no action authorises nothing at all. The `apply` step is the
+  task that carries one: the agent proposes the action in its report, the
+  coordinator puts it in the approval, and the task is created blocked until
   a human decides.
 
 ## Idempotency and recovery
@@ -437,12 +443,15 @@ appear in tool arguments, so ids are unguessable by design. A report names
 the task it is about, so it cannot land on a different task the agent also
 holds.
 
-**Externally consequential work is gated on a human.** The gate does not
-depend on the task's own flags: `org_run_execution` requires an approved
-request on the task, whatever the task says about it. A task is data, and
-data does not grant authority — a task created by a model cannot mark
-itself approved. The `apply` step is the task that carries such a request,
-and it is created blocked until a human decides.
+**Externally consequential work is gated on a human, and the gate names
+what it allows.** It does not depend on the task's own flags:
+`org_run_execution` requires an approved request on the task, whatever the
+task says about it. A task is data, and data does not grant authority — a
+task created by a model cannot mark itself approved. The approval also
+carries the action it authorises, and the requested action must match it.
+The `apply` step is the task that carries such a request: the agent
+proposes the action, the coordinator asks a human about that action, and
+the task is created blocked until the human decides.
 
 **There is no multi-tenancy.** One deployment is one organization. There is
 one token, not per-user identities, and `decidedBy` on an approval is a free
@@ -529,6 +538,15 @@ it states the rules an agent needs in order to work here — the commands, the
 conventions, the design constraints, and the rule that a behavioural change
 needs a test that would fail without it. It is written in the same voice as
 the instructions the agents give each other.
+
+## Running on another Durable Objects runtime
+
+The organization's load-bearing pieces are a Durable Object with SQLite
+storage, a relational shared store, and a model provider — and all three are
+portable. This was not assumed: the system was stood up on
+[celld](https://github.com/denoland/celld) and the full chain ran there with
+no product code changed. See [docs/celld.md](celld.md) for what was verified,
+what the configuration delta is, and what was not.
 
 ## Known limitations and future work
 

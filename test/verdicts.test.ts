@@ -62,7 +62,9 @@ describe("the execution path", () => {
 		const approval = await createApproval(db(), {
 			taskId: null,
 			requestedBy: "operator",
-			reason: "Run the build."
+			reason: "Run the build.",
+			// The human approves an action, not a task.
+			action: { command: "npm test" }
 		});
 		await db()
 			.prepare("UPDATE approvals SET status = 'approved', decided_by = 'operator' WHERE approval_id = ?1")
@@ -176,5 +178,94 @@ describe("the coordinator's own delegation", () => {
 		);
 		expect(settled.status).toBe("completed");
 		await waitForIdle();
+	});
+});
+
+describe("what an approval authorises", () => {
+	it("does not let an approved action authorise a different one", async () => {
+		// A human approved running the tests.
+		const approval = await createApproval(db(), {
+			taskId: null,
+			requestedBy: "operator",
+			reason: "Run the tests.",
+			action: { command: "npm run deploy" }
+		});
+		await db()
+			.prepare("UPDATE approvals SET status = 'approved', decided_by = 'operator' WHERE approval_id = ?1")
+			.bind(approval.approval_id)
+			.run();
+
+		const { task } = await createTask(db(), {
+			kind: "apply",
+			title: "Deploy the thing",
+			instruction: "Run the build with the key build-9 and report what happened.",
+			assignee: "engineer",
+			createdBy: "coordinator",
+			requiresApproval: true,
+			correlationId: "cor_scope"
+		});
+		await db()
+			.prepare("UPDATE tasks SET approval_id = ?1 WHERE task_id = ?2")
+			.bind(approval.approval_id, task.task_id)
+			.run();
+
+		await env.ORG_AGENTS.getByName("engineer").assign(task.task_id);
+		await waitFor(
+			async () => {
+				const current = await getTask(db(), task.task_id);
+				return current?.status === "completed" ? current : null;
+			},
+			"the task to finish"
+		);
+
+		// The approved action was "npm run deploy"; the task asked for
+		// "npm test", and the run was refused because the approval does not
+		// cover it.
+		const executions = await db()
+			.prepare("SELECT * FROM executions WHERE task_id = ?1")
+			.bind(task.task_id)
+			.all<{ execution_id: string }>();
+		expect(executions.results.length).toBe(0);
+	});
+
+	it("refuses everything when the approval names no action", async () => {
+		const approval = await createApproval(db(), {
+			taskId: null,
+			requestedBy: "operator",
+			reason: "Do the needful."
+		});
+		await db()
+			.prepare("UPDATE approvals SET status = 'approved', decided_by = 'operator' WHERE approval_id = ?1")
+			.bind(approval.approval_id)
+			.run();
+
+		const { task } = await createTask(db(), {
+			kind: "apply",
+			title: "Do something",
+			instruction: "Run the build with the key build-10 and report what happened.",
+			assignee: "engineer",
+			createdBy: "coordinator",
+			requiresApproval: true,
+			correlationId: "cor_scope2"
+		});
+		await db()
+			.prepare("UPDATE tasks SET approval_id = ?1 WHERE task_id = ?2")
+			.bind(approval.approval_id, task.task_id)
+			.run();
+
+		await env.ORG_AGENTS.getByName("engineer").assign(task.task_id);
+		await waitFor(
+			async () => {
+				const current = await getTask(db(), task.task_id);
+				return current?.status === "completed" ? current : null;
+			},
+			"the task to finish"
+		);
+
+		const executions = await db()
+			.prepare("SELECT * FROM executions WHERE task_id = ?1")
+			.bind(task.task_id)
+			.all<{ execution_id: string }>();
+		expect(executions.results.length).toBe(0);
 	});
 });

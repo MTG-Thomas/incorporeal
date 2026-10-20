@@ -195,7 +195,28 @@ function printField(label, value) {
 class UsageError extends Error {}
 class CliError extends Error {}
 
+/**
+ * Load `.env` from the working directory, if there is one.
+ *
+ * Node's own loader reads the file without adding a dependency, and it does
+ * not overwrite variables that are already set, so an explicit environment
+ * still wins.
+ */
+function loadEnvFile() {
+	if (process.env.ORG_URL && process.env.ORG_API_TOKEN) return;
+	try {
+		process.loadEnvFile(".env");
+	} catch {
+		// No file, or none this Node can read. The flags and the environment
+		// are still there.
+	}
+}
+
 function resolveConfig(flags) {
+	// A `.env` file in the working directory is loaded first, so a
+	// deployment's URL and token do not have to be typed every time. The
+	// environment still wins over the file, and the flags win over both.
+	loadEnvFile();
 	const rawUrl = flags.url ?? process.env.ORG_URL ?? "";
 	const url = rawUrl.trim().replace(/\/+$/, "");
 	const token = (flags.token ?? process.env.ORG_API_TOKEN ?? "").trim();
@@ -330,8 +351,27 @@ function approvalRow(approval) {
 		approval.status ? colorStatus(approval.status) : "-",
 		approval.task_id ?? "-",
 		approval.requested_by,
-		approval.reason ?? ""
+		approval.reason ?? "",
+		describeAction(approval.requested_action)
 	];
+}
+
+/** What an approval authorises, in the operator's words. */
+function describeAction(raw) {
+	if (!raw) return "(no action named)";
+	let action;
+	try {
+		action = typeof raw === "string" ? JSON.parse(raw) : raw;
+	} catch {
+		return String(raw);
+	}
+	if (!action || typeof action.command !== "string") return "(no action named)";
+	const parts = [action.command];
+	if (Array.isArray(action.args) && action.args.length > 0) parts.push(action.args.join(" "));
+	if (action.backend) parts.push(`via ${action.backend}`);
+	if (action.repo) parts.push(`in ${action.repo}`);
+	if (action.branch) parts.push(`on ${action.branch}`);
+	return parts.join(" ");
 }
 
 function eventRow(event) {
@@ -587,7 +627,7 @@ async function commandApprovals(config, flags) {
 	const payload = await api(config, "GET", "/api/approvals");
 	if (flags.json) return payload;
 	printTable(
-		["APPROVAL", "STATUS", "TASK", "REQUESTED BY", "REASON"],
+		["APPROVAL", "STATUS", "TASK", "REQUESTED BY", "REASON", "AUTHORISES"],
 		asArray(payload?.approvals).map(approvalRow)
 	);
 	return payload;

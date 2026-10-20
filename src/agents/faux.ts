@@ -113,7 +113,8 @@ const DEFAULT_SPEC: FauxSpec = {
 					args: {
 						summary: "Ran the build and reported the result.",
 						findings: [],
-						evidence: ["the execution record"]
+						evidence: ["the execution record"],
+						action: { command: "npm test" }
 					}
 				}
 			]

@@ -535,7 +535,14 @@ export async function releaseObligation(db: D1Database, obligationId: string): P
 
 export async function createApproval(
 	db: D1Database,
-	input: { taskId: string | null; requestedBy: string; reason: string; toolTaskId?: string | null }
+	input: {
+		taskId: string | null;
+		requestedBy: string;
+		reason: string;
+		toolTaskId?: string | null;
+		/** The action this approval authorises. */
+		action?: unknown;
+	}
 ): Promise<ApprovalRow> {
 	if (input.toolTaskId) {
 		const existing = await db
@@ -548,8 +555,9 @@ export async function createApproval(
 	const now = Date.now();
 	await db
 		.prepare(
-			`INSERT INTO approvals (approval_id, task_id, requested_by, reason, status, created_at, tool_task_id)
-			 VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6)`
+			`INSERT INTO approvals (approval_id, task_id, requested_by, reason, status, created_at, tool_task_id,
+				requested_action)
+			 VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?7)`
 		)
 		.bind(
 			approvalId,
@@ -557,7 +565,8 @@ export async function createApproval(
 			input.requestedBy,
 			input.reason,
 			now,
-			input.toolTaskId ?? null
+			input.toolTaskId ?? null,
+			input.action === undefined ? null : JSON.stringify(input.action)
 		)
 		.run();
 	const row = await db

@@ -8,7 +8,16 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations, reset } from "cloudflare:test";
 import { afterEach, beforeEach } from "vitest";
-import schema from "../migrations/0001_init.sql?raw";
+const migrationFiles = import.meta.glob("../migrations/*.sql", {
+	query: "?raw",
+	import: "default",
+	eager: true
+}) as Record<string, string>;
+
+/** Every migration, in the order they must be applied. */
+const migrations = Object.entries(migrationFiles)
+	.sort(([a], [b]) => a.localeCompare(b))
+	.map(([name, sql]) => ({ name: name.split("/").pop() ?? name, sql }));
 
 /**
  * The migration file, split into statements.
@@ -28,7 +37,13 @@ function statements(sql: string): string[] {
 
 beforeEach(async () => {
 	await reset();
-	await applyD1Migrations(env.ORG_DB, [{ name: "0001_init", queries: statements(schema) }]);
+	await applyD1Migrations(
+		env.ORG_DB,
+		migrations.map((migration) => ({
+			name: migration.name,
+			queries: statements(migration.sql)
+		}))
+	);
 });
 
 afterEach(async () => {

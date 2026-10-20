@@ -32,7 +32,7 @@
 		{
 			"binding": "ORG_DB",
 			"database_name": "incorporeal",
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "7a2b6d43-3a63-4586-bd1e-29c9238ce06c",
 			"migrations_dir": "migrations"
 		}
 	],
@@ -47,10 +47,10 @@
 		"crons": ["*/15 * * * *"]
 	},
 	"vars": {
-		"ORG_ENV": "local",
+		"ORG_ENV": "production",
 		"MODEL_DEFAULT": "@cf/zai-org/glm-4.7-flash",
 		"MODEL_COORDINATOR": "@cf/zai-org/glm-4.7-flash",
-		"MODEL_ENGINEER": "@cf/moonshotai/kimi-k2.7-code",
+		"MODEL_ENGINEER": "@cf/openai/gpt-oss-120b",
 		"MODEL_REVIEWER": "@cf/zai-org/glm-4.7-flash",
 		"THINKING_LEVEL": "low",
 		"EXECUTION_BACKEND": "simulated",

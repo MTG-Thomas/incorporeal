@@ -231,7 +231,9 @@ npm run check   # typecheck + tests
 - Not a new agent harness: [pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable)
   provides the durable execution, and the Agents SDK provides the Durable
   Object lifecycle. This repository is the organization around them.
-- Not autonomous: anything that changes the outside world waits for a human.
+- Not autonomous: anything that changes the outside world waits for a human,
+  and a human approves a **specific action** — the command, and optionally
+  the arguments, the backend, the repository and the branch — not a task.
 
 The honest gaps are listed in [docs/architecture.md](docs/architecture.md)
 under "known limitations", and the design decisions are in
@@ -256,6 +258,17 @@ src/
 test/                 integration tests, inside workerd
 docs/                 architecture, ADRs, the free-tier budget, the runbook
 ```
+
+## Running it somewhere else
+
+The organization was also stood up on
+[celld](https://github.com/denoland/celld), the self-hosted Durable Objects
+runtime, and the whole chain ran there with **no product code changed**: the
+Agent SDK's `PiHarness` boots in a celld Durable Object, the pi-durable
+SQLite adapter works verbatim, and D1's `meta.changes` behaves the same way
+for the conditional updates the race discipline depends on. The delta is a
+configuration file, a bucket and a migration command. What was verified, and
+what was not, is in [docs/celld.md](docs/celld.md).
 
 ## Licence
 

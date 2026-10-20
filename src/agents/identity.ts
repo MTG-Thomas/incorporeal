@@ -69,6 +69,8 @@ export async function loadIdentity(
 	if (existing) {
 		row = existing;
 	} else {
+		// An agent nobody has heard of joins with the read-only observer
+		// role. It can read and report, and nothing else.
 		row = await upsertAgent(db, {
 			agentId,
 			role,

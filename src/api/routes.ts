@@ -30,9 +30,16 @@ function notFound(message: string): Response {
 	return json({ error: message }, 404);
 }
 
+/** The largest request body the API reads. */
+const MAX_BODY_BYTES = 64 * 1024;
+
 async function readJson(request: Request): Promise<Json> {
 	try {
-		const body: unknown = await request.json();
+		const text = await request.text();
+		if (text.length > MAX_BODY_BYTES) {
+			throw new Error(`the request body is larger than ${MAX_BODY_BYTES} bytes`);
+		}
+		const body: unknown = JSON.parse(text);
 		if (body && typeof body === "object") return body as Json;
 		return {};
 	} catch {

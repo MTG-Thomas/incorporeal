@@ -5,11 +5,6 @@
  * the structured logs and the Durable Object traces can be joined.
  */
 
-/** RFC 4122 v4 identifier, from the runtime's CSPRNG. */
-export function uuid(): string {
-	return crypto.randomUUID();
-}
-
 /**
  * A short, sortable, human-readable id: `<prefix>_<base32 time><random>`.
  *
@@ -24,9 +19,4 @@ export function shortId(prefix: string): string {
 	let random = "";
 	for (const byte of bytes) random += byte.toString(32).padStart(2, "0");
 	return `${prefix}_${time}${random}`;
-}
-
-/** A correlation id for one logical action. */
-export function correlationId(): string {
-	return shortId("cor");
 }

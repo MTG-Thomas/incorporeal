@@ -23,15 +23,38 @@ The dashboard does it in two clicks: **Workers & Pages → incorporeal →
 Access → "Protect this Worker behind Access"**, then pick the policy
 (Cloudflare account member, or an email address) and apply.
 
-The script does the same thing with an API token:
+The [`cf` CLI](https://developers.cloudflare.com/cli/) does it with the
+account it is already logged into, which is the shortest path:
+
+```sh
+cf zero-trust access applications create --body '{
+  "type": "self_hosted",
+  "name": "Incorporeal",
+  "destinations": [{ "type": "worker", "worker_id": "<the worker script id>" }],
+  "session_duration": "24h",
+  "policies": [{
+    "decision": "allow",
+    "name": "Incorporeal operators",
+    "precedence": 1,
+    "include": [{ "email": { "email": "you@example.com" } }]
+  }]
+}'
+```
+
+The worker script id comes from `cf workers get incorporeal` (or
+`GET /accounts/{id}/workers/scripts/incorporeal`).
+
+`scripts/access-setup.mjs` does the whole thing — the application, a service
+token for machine callers, and the policy that lets the token through — with
+an API token:
 
 ```sh
 CLOUDFLARE_API_TOKEN=… node scripts/access-setup.mjs --email you@example.com
 ```
 
 The token needs `Access: Apps and Policies Write` and `Workers Scripts:
-Read`. The script prints the application's **aud** tag, which is what a
-client asserts the token against.
+Read`. The script prints the application's **aud** tag, which is what a client
+asserts the token against.
 
 ### Who may sign in
 
@@ -45,18 +68,44 @@ single-operator deployment:
 Access works on the Free plan. A user consumes a seat when they authenticate;
 service tokens do not.
 
-### The webhook sender
+### Machine callers
 
 A machine calling a gated application presents an Access **service token**:
 
 ```
-CF-Access-Client-Id: <id>
-CF-Access-Client-Secret: <secret>
+CF-Access-Client-Id: <client id>
+CF-Access-Client-Secret: <client secret>
 ```
 
-Create one with `POST /accounts/{account_id}/access/service_tokens` (or in
-the dashboard) and add a **Service Auth** policy to the application. The
-existing `X-Webhook-Secret` can stay as well; the two are independent.
+Create one with `cf zero-trust access service-tokens create --name …` (or
+`POST /accounts/{account_id}/access/service_tokens`, or in the dashboard) and
+give the application a policy that includes it:
+
+```jsonc
+{
+  "decision": "allow",
+  "name": "Incorporeal machine callers",
+  "precedence": 2,
+  "include": [{ "service_token": { "token_id": "<the service token's id>" } }]
+}
+```
+
+The rule takes the service token's **id**, not its client id. The decision
+is `allow`; a service token that matches a policy with any other action is
+sent to the identity provider instead, which is the usual reason a service
+token "does not work".
+
+A service token does not consume a seat.
+
+The CLI reads the token from the environment:
+
+```
+CF_ACCESS_CLIENT_ID=…
+CF_ACCESS_CLIENT_SECRET=…
+```
+
+and the existing `X-Webhook-Secret` can stay as well; the two are
+independent, and both have to pass.
 
 ## The application: the identity, and the token
 
@@ -110,6 +159,20 @@ path is exercised without a Cloudflare account:
   }
 }
 ```
+
+## What it looks like in practice
+
+With the gate applied, the deployment answers:
+
+| Request | Answer |
+| --- | --- |
+| Nothing | `302` to the Access login page |
+| The management token, no session | `302` — the token alone is not enough |
+| The management token and an Access service token | `200` — the machine path |
+| A browser, signed in as an allowed identity | `200` |
+
+That is the two layers doing their separate jobs: the edge decides *who* is
+calling, the application decides *whether they may drive the organization*.
 
 ## Two things to know
 

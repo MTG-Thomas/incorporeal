@@ -10,6 +10,11 @@
  *   ORG_URL         base URL of the deployed worker (required)
  *   ORG_API_TOKEN   bearer token for the management API (required)
  *
+ * When the deployment is behind Cloudflare Access, the request also has to
+ * carry an Access service token:
+ *   CF_ACCESS_CLIENT_ID      the service token's client id
+ *   CF_ACCESS_CLIENT_SECRET  the service token's client secret
+ *
  * --url and --token override the environment. The token is never printed.
  */
 
@@ -223,6 +228,11 @@ function resolveConfig(flags) {
 	const rawUrl = flags.url ?? process.env.ORG_URL ?? "";
 	const url = rawUrl.trim().replace(/\/+$/, "");
 	const token = (flags.token ?? process.env.ORG_API_TOKEN ?? "").trim();
+	// The Access service token, when the deployment is behind Access.
+	const access = {
+		clientId: process.env.CF_ACCESS_CLIENT_ID ?? "",
+		clientSecret: process.env.CF_ACCESS_CLIENT_SECRET ?? ""
+	};
 	if (!url) {
 		throw new CliError(
 			"No worker URL. Set ORG_URL (for example https://incorporeal.example.workers.dev) or pass --url."
@@ -240,7 +250,7 @@ function resolveConfig(flags) {
 			throw new UsageError("--timeout must be a positive number of milliseconds");
 		}
 	}
-	return { url, token, timeout };
+	return { url, token, timeout, access };
 }
 
 /**
@@ -260,6 +270,12 @@ async function api(config, method, path, body) {
 			headers: {
 				authorization: `Bearer ${config.token}`,
 				accept: "application/json",
+				...(config.access.clientId
+					? {
+							"cf-access-client-id": config.access.clientId,
+							"cf-access-client-secret": config.access.clientSecret
+						}
+					: {}),
 				...(body === undefined ? {} : { "content-type": "application/json" })
 			},
 			body: body === undefined ? undefined : JSON.stringify(body),

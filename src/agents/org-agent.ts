@@ -86,12 +86,10 @@ export class OrgAgent extends DurableObject<Env> {
 	readonly #agentId: string;
 	readonly harness: PiHarness;
 	readonly lifecycle: Lifecycle<Env>;
-	#identity: Promise<AgentIdentity> | null = null;
 	#modelId = "";
 	#modelProvider = "cloudflare";
 	#thinkingLevel = "low";
 	#modelRef: { provider: string; id: string } | null = null;
-	#resolvedModelId: string | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -125,7 +123,6 @@ export class OrgAgent extends DurableObject<Env> {
 					self.#agentId
 				);
 				self.#modelRef = { provider: resolved.id, id: resolved.modelId };
-				self.#resolvedModelId = resolved.modelId;
 				self.#modelProvider = resolved.id;
 				logInfo("the model provider is resolved", {
 					agentId: self.#agentId,
@@ -191,8 +188,10 @@ export class OrgAgent extends DurableObject<Env> {
 	async #applyModel(identity: AgentIdentity): Promise<void> {
 		try {
 			// The faux provider serves one model of its own, so the agent's row
-			// does not choose it.
-			const modelId = this.#resolvedModelId ?? identity.model;
+			// does not choose it. For every other provider the row decides,
+			// read fresh: the isolate that opened pi may be hours old.
+			const modelId =
+				this.#modelProvider === FAUX_PROVIDER_ID ? FAUX_MODEL_ID : identity.model;
 			const pi = await this.harness.pi();
 			const root = await pi.root(BACKGROUND_CONTEXT);
 			const current = await root.agent(BACKGROUND_CONTEXT);
@@ -427,12 +426,19 @@ export class OrgAgent extends DurableObject<Env> {
 		const usage = await pi.usage(BACKGROUND_CONTEXT);
 		const pending = await this.harness.pending();
 		const messages = await this.harness.messages();
+		const conversation = await pi.root(BACKGROUND_CONTEXT);
+		const conversationAgent = await conversation.agent(BACKGROUND_CONTEXT);
 		return {
 			agentId: this.#agentId,
 			role: identity.role,
 			title: identity.title,
 			permissions: identity.permissions,
 			model: identity.model,
+			// The model the conversation actually uses, which is what the
+			// agent's next request goes to.
+			conversationModel: conversationAgent.model
+				? `${conversationAgent.model.provider}/${conversationAgent.model.modelId}`
+				: null,
 			openTasks: mine.map((task) => ({
 				taskId: task.task_id,
 				kind: task.kind,
@@ -455,12 +461,16 @@ export class OrgAgent extends DurableObject<Env> {
 
 	/* ── internals ──────────────────────────────────────────────────────── */
 
-	#resolveIdentity(): Promise<AgentIdentity> {
-		this.#identity ??= loadIdentity(this.env.ORG_DB, this.env, this.#agentId).catch((error: unknown) => {
-			this.#identity = null;
-			throw error;
-		});
-		return this.#identity;
+	/**
+	 * The agent's identity, read fresh.
+	 *
+	 * A Durable Object can stay alive for a long time — pi's lifecycle job
+	 * keeps it that way — so a cached identity would keep an agent on a model
+	 * the operator has changed, and with stale limits. One row read is cheap;
+	 * a stale identity is not.
+	 */
+	async #resolveIdentity(): Promise<AgentIdentity> {
+		return loadIdentity(this.env.ORG_DB, this.env, this.#agentId);
 	}
 
 	async #markRunning(task: TaskRow): Promise<void> {

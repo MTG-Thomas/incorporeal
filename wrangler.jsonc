@@ -40,17 +40,10 @@
 	"ai": {
 		"binding": "AI"
 	},
-	// Local development pretends to be an authenticated operator, so the
-	// same identity path is exercised without a Cloudflare account. In a
-	// deployment this comes from Cloudflare Access instead.
-	"access": {
-		"dev": {
-			"aud": "incorporeal-dev",
-			"identity": {
-				"email": "operator@localhost"
-			}
-		}
-	},
+	// Local development may pretend to be an authenticated operator by adding
+	// an "access" block with a "dev" identity to this file. It is left out on
+	// purpose: the test pool reads this file, and an access block makes it
+	// open a real Access session instead of running locally.
 	// The only cron trigger in the system. It does nothing but hand the
 	// obligation sweep to the coordinator Durable Object, because a Workers
 	// Free invocation gets 10 ms of CPU while a Durable Object gets 30 s.
@@ -59,9 +52,13 @@
 	},
 	"vars": {
 		"ORG_ENV": "production",
+		// When Cloudflare Access is in front, only these identities may drive
+		// the organization. A machine caller (the CLI, the webhook sender)
+		// has no email and is authorised by its token instead.
+		"CF_ACCESS_ALLOWED_EMAILS": "thomas@midtowntg.com",
 		"MODEL_DEFAULT": "@cf/zai-org/glm-4.7-flash",
 		"MODEL_COORDINATOR": "@cf/zai-org/glm-4.7-flash",
-		"MODEL_ENGINEER": "@cf/openai/gpt-oss-120b",
+		"MODEL_ENGINEER": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		"MODEL_REVIEWER": "@cf/zai-org/glm-4.7-flash",
 		"THINKING_LEVEL": "low",
 		"EXECUTION_BACKEND": "simulated",

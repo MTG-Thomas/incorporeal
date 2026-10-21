@@ -10,7 +10,7 @@
 import { env } from "cloudflare:workers";
 import { evictDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { getTask, listEvents, listTasks, createTask } from "../src/db/org.ts";
+import { getTask, listEvents, listTasks, createTask, upsertAgent } from "../src/db/org.ts";
 import { api, db, waitFor, waitForIdle } from "./helpers.ts";
 
 const agent = (id: string) => env.ORG_AGENTS.getByName(id);
@@ -242,5 +242,43 @@ describe("durability", () => {
 		// Nothing of the predecessor's work is in the successor's transcript.
 		expect(successor.transcriptPreview).not.toContain("A goal for the engineer");
 		expect(successor.transcriptPreview).not.toContain("Investigate: A goal for the engineer");
+	});
+});
+
+describe("an agent that stays alive", () => {
+	it("picks up a model change without being restarted", async () => {
+		// The agent is running, and its model is changed underneath it.
+		await agent("engineer").status();
+		await upsertAgent(db(), {
+			agentId: "engineer",
+			role: "engineer",
+			title: "Engineer",
+			model: "@cf/openai/gpt-oss-120b",
+			permissions: ["task.read", "task.report", "knowledge.read", "knowledge.write", "execution.run"]
+		});
+
+		// The next run uses the new model. A Durable Object can stay alive for
+		// a long time, so a cached identity would keep the agent on the old
+		// model for hours.
+		const { task } = await createTask(db(), {
+			kind: "investigate",
+			title: "A task after the model changed",
+			instruction: "Report what you find.",
+			assignee: "engineer",
+			createdBy: "coordinator",
+			correlationId: "cor_model"
+		});
+		await agent("engineer").assign(task.task_id);
+		const settled = await waitFor(
+			async () => {
+				const current = await getTask(db(), task.task_id);
+				return current?.status === "completed" ? current : null;
+			},
+			"the task to finish"
+		);
+		expect(settled.status).toBe("completed");
+
+		const status = (await agent("engineer").status()) as { model: string };
+		expect(status.model).toBe("@cf/openai/gpt-oss-120b");
 	});
 });

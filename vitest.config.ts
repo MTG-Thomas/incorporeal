@@ -6,6 +6,11 @@ export default defineConfig({
 	plugins: [
 		cloudflareTest({
 			wrangler: { configPath: fileURLToPath(new URL("./wrangler.jsonc", import.meta.url)) },
+			// The suite runs the deterministic provider, so it never needs the
+			// real Workers AI binding. Keeping the pool local also keeps the
+			// tests out of the way of the deployment's Access gate, which
+			// covers preview URLs too.
+			remoteBindings: false,
 			miniflare: {
 				bindings: {
 					ORG_API_TOKEN: "test-token",

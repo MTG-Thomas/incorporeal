@@ -145,3 +145,47 @@ describe("the model providers", () => {
 		expect(resolved.modelId).toBe("gpt-5");
 	});
 });
+
+describe("the OpenCode Go key", () => {
+	it("is read under either name", async () => {
+		const withGo = await resolveProvider(
+			testEnv({
+				MODEL_PROVIDER: "opencode-go",
+				OPENCODE_GO_API_KEY: "oc-key",
+				OPENCODE_GO_BASE_URL: "https://example.test/v1",
+				OPENCODE_GO_MODELS: JSON.stringify([{ id: "a-model" }])
+			}),
+			db(),
+			"a-model"
+		);
+		expect(withGo.id).toBe("opencode-go");
+
+		// The name the service's own documentation uses works too.
+		const withDocumented = await resolveProvider(
+			testEnv({
+				MODEL_PROVIDER: "opencode-go",
+				OPENCODE_API_KEY: "oc-key",
+				OPENCODE_GO_BASE_URL: "https://example.test/v1",
+				OPENCODE_GO_MODELS: JSON.stringify([{ id: "a-model" }])
+			}),
+			db(),
+			"a-model"
+		);
+		expect(withDocumented.id).toBe("opencode-go");
+	});
+
+	it("refuses a model the service does not serve, and says which it does", async () => {
+		await expect(
+			resolveProvider(
+				testEnv({
+					MODEL_PROVIDER: "opencode-go",
+					OPENCODE_GO_API_KEY: "oc-key",
+					OPENCODE_GO_BASE_URL: "https://example.test/v1",
+					OPENCODE_GO_MODELS: JSON.stringify([{ id: "a-model" }, { id: "b-model" }])
+				}),
+				db(),
+				"@cf/zai-org/glm-4.7-flash"
+			)
+		).rejects.toThrow(/a-model, b-model/);
+	});
+});

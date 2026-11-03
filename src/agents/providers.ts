@@ -104,12 +104,25 @@ export async function resolveProvider(
 			});
 		}
 		case "opencode-go": {
-			const key = env.OPENCODE_API_KEY;
-			requireCredentials(key, "OPENCODE_API_KEY");
+			// The deployment's own name for the key, and the name the
+			// service's documentation uses.
+			const key = env.OPENCODE_GO_API_KEY || env.OPENCODE_API_KEY;
+			requireCredentials(key, "OPENCODE_GO_API_KEY");
+			const models = parseModelList(env.OPENCODE_GO_MODELS);
+			if (!models.some((model) => model.id === modelId)) {
+				// The model belongs to another provider, or to a plan this
+				// key cannot reach. Say which, rather than sending a request
+				// that will be refused.
+				throw new Error(
+					`the opencode-go provider does not serve "${modelId}". It serves: ${models
+						.map((model) => model.id)
+						.join(", ")}. The model id is per provider, so an agent's model has to be changed when the provider is.`
+				);
+			}
 			const provider = opencodeGoProvider({
 				baseUrl: env.OPENCODE_GO_BASE_URL || OPENCODE_GO_BASE_URL,
 				apiKey: key!,
-				models: parseModelList(env.OPENCODE_GO_MODELS),
+				models,
 				// A stable session per agent, so the service can route the
 				// conversation and cache its prompts.
 				session: `incorporeal-${agentId ?? "agent"}`

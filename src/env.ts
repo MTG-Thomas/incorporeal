@@ -60,7 +60,15 @@ export interface Env {
 	MODEL_PROVIDER: string;
 	/** The script the faux provider answers from, as JSON. */
 	FAUX_SCRIPT?: string;
-	/** The API key for an OpenAI-compatible service such as OpenCode Go. */
+	/**
+	 * The API key for an OpenAI-compatible service such as OpenCode Go.
+	 *
+	 * `OPENCODE_GO_API_KEY` is the name this deployment uses;
+	 * `OPENCODE_API_KEY` is the name the service's own documentation uses.
+	 * Either is accepted, and neither is stored in the configuration: both
+	 * are Worker secrets.
+	 */
+	OPENCODE_GO_API_KEY?: string;
 	OPENCODE_API_KEY?: string;
 	/**
 	 * The base URL of that service, including any path prefix.

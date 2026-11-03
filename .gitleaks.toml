@@ -32,3 +32,11 @@ keywords = ["incorporeal_canary_"]
 [[allowlists]]
 description = "Controlled canary fixture (scanned in isolation by the canary step)."
 paths = ['''test/fixtures/secret-scan/.*''']
+# Superseded inline canary: before 7f10f7b the workflow generated the canary
+# with an inline echo, so these two trees contain the synthetic value. The
+# value was moved to the controlled fixture above; it was never a real
+# credential (unknown prefix, committed openly), so history keeps the string
+# and the allowlist pins the exact commits. Never add a real leaked
+# credential here — real leaks must be revoked/rotated first (see
+# SECURITY.md). Precedent: Wrangnarok's historic-docs allowlist.
+commits = ['''882f08f8fa9ee9352aa74fb5c8e7d7216c493221''', '''6023a543f67337ea069e4bad0962d7fb085e0153''']

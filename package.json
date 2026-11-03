@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"description": "A Cloudflare-native organization of persistent, proactive Pi agents on Workers Free.",
-	"license": "MIT",
+	"license": "AGPL-3.0-only",
 	"engines": {
 		"node": ">=22.19"
 	},

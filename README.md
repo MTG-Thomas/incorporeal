@@ -288,4 +288,4 @@ what was not, is in [docs/celld.md](docs/celld.md).
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE).

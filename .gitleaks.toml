@@ -1,0 +1,24 @@
+# Incorporeal secret-scan config.
+#
+# Gitleaks extends its embedded default rule set (useDefault) and adds one
+# narrowly scoped synthetic canary rule used ONLY by the controlled CI canary
+# step. The canary prefix (incorporeal_canary_) is unknown to GitHub secret
+# scanning, so committing nothing with this prefix trips push protection;
+# the canary is generated at runtime in a temp dir instead. This proves the
+# scanner path works end to end without committing fixture secrets.
+#
+# Suppression policy: do not add blanket exclusions (e.g. whole src/ or file
+# types). New suppressions need a comment with the reason.
+title = "Incorporeal secret scan"
+
+[extend]
+useDefault = true
+
+# Synthetic canary rule: high confidence by prefix, no entropy gate, so the
+# runtime-generated canary is deterministically detected. Never use this
+# prefix for real credentials.
+[[rules]]
+id = "incorporeal-canary"
+description = "Synthetic canary for controlled CI test (not a real credential)."
+regex = '''incorporeal_canary_[A-Za-z0-9]{32}'''
+keywords = ["incorporeal_canary_"]

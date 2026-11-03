@@ -21,16 +21,29 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: Guardrails (secrets must stay untracked)
+        shell: bash
+        run: |
+          tracked_secrets="$(git ls-files | grep -E '(^\.dev\.vars$|^\.env$|seed-local\.override\.sql$)')" || true
+          if [[ -n "$tracked_secrets" ]]; then
+            echo "Tracked secret files must not be committed:"
+            echo "$tracked_secrets"
+            exit 1
+          fi
 
       - name: Typecheck
         run: npm run typecheck

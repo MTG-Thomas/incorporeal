@@ -133,7 +133,36 @@ The expected body is `{"status":"ok","env":"local"}` — `env` echoes
 `ORG_ENV`, whose default in `wrangler.jsonc` is `local`. Change it to
 `production` in `wrangler.jsonc` before deploying for real.
 
-### 2.5 Point the CLI at it
+### 2.5 Cap model dollars with a spend rule (Workers Paid)
+
+Past the free 10,000 neurons/day, every model call bills. The shipped
+posture is **$0**: no paid inference until you say so.
+
+1. In the Cloudflare dashboard, go to **AI > AI Gateway** and create a
+gateway (for example `incorporeal`).
+2. On that gateway, go to **Settings > Spend limits** and add a rule with
+a **$0** budget. Every agent's calls carry its id as `agent_id` metadata,
+so you can split the budget per agent later; start with one shared bucket.
+3. Point the deployment at it:
+
+   ```jsonc
+   "vars": { "AI_GATEWAY_ID": "incorporeal" }
+   ```
+
+   Redeploy. `AI_GATEWAY_ID` empty or unset means the Workers AI binding is
+called directly, exactly as before — including past the free allocation,
+where it bills.
+
+4. Verify live, because no test can prove these: send an agent a note
+(`POST /api/agents/engineer/note`) and confirm the call succeeds inside
+the free allocation, then check the gateway's analytics that the request
+carried the `agent_id` metadata. Only then consider raising the $0 rule.
+
+A blocked call answers `429` and settles through the existing `model_error`
+path: the task fails with the reason, the event is recorded, and the
+coordinator is notified. See "A spend rule is blocking model calls" below.
+
+### 2.6 Point the CLI at it
 
 `scripts/orgctl.mjs` is a dependency-free operator console for the
 management API. It reads two environment variables:
@@ -244,6 +273,7 @@ Where a value is set:
 | `MODEL_ENGINEER` | No | `@cf/moonshotai/kimi-k2.7-code` | The engineer's model. |
 | `MODEL_REVIEWER` | No | `@cf/zai-org/glm-4.7-flash` | The reviewer's model. |
 | `THINKING_LEVEL` | No | `low` | The model thinking level: `off`, `minimal`, `low`, `medium`, `high`. The largest single lever on neuron spend. |
+| `AI_GATEWAY_ID` | No | none (direct binding) | AI Gateway id that Workers AI traffic is routed through, so a spend rule can cap model dollars. Empty means the binding is called directly. Every call carries the agent's id as `agent_id` metadata for per-agent rules. |
 | `EXECUTION_BACKEND` | No | `simulated` | `simulated` performs no external work and costs nothing; `github-actions` dispatches a workflow (cost: GitHub Actions minutes, not Cloudflare credits); `none` refuses every action. |
 | `REPO_PROVIDER` | No | `simulated` | Where the deterministic repository check looks: `simulated` reads `SIMULATED_REPO_STATE`; `github` reads the newest workflow runs (only selected when `GITHUB_REPO` is also set). |
 | `SIMULATED_REPO_STATE` | No | a failing CI run on `main` | JSON read by the simulated repository check: `{"ciStatus":"failing","workflow":"build-and-test","branch":"main","issue":"..."}`. With `ciStatus` not `failing`, the check reports a healthy repository. |
@@ -546,6 +576,20 @@ failures for several agents at once.
 4. Once the allocation resets, the sweep re-issues the open tasks. Tasks
    already marked `failed` stay failed; re-create them if you want them
    done.
+
+### A spend rule is blocking model calls
+
+Symptoms: tasks fail with a `model_error` reason even though the free
+allocation is not exhausted, and the gateway analytics show blocked `429`s.
+
+1. Confirm it: the task's result names the 429, and the gateway's
+   analytics show the spend rule over budget.
+2. Decide: raise the rule in **AI Gateway > Settings > Spend limits**, or
+   leave it and let the work wait for the window to reset. Do not "fix" it
+   by clearing `AI_GATEWAY_ID` — that removes the dollar boundary instead of
+   answering the budget question.
+3. Re-create the failed tasks if you want them done; failed tasks do not
+   retry on their own.
 
 ### A Durable Object is wedged
 

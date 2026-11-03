@@ -300,6 +300,13 @@ large output is a different bill from an expensive model with a small one.
 at $0.011 per 1,000 neurons. Model-specific rate limits may also apply on
 top of the daily allocation.
 
+**Capping the bill.** Set `AI_GATEWAY_ID` to route Workers AI through an AI
+Gateway carrying the agent's id as metadata, and put a spend rule on the
+gateway — $0 by default, so a fresh deployment cannot spend until the
+operator raises it. A blocked call answers `429` and settles through the
+existing `model_error` path: task failed with the reason, event recorded,
+coordinator notified. See `docs/providers.md` and the runbook.
+
 ## Execution cost
 
 The execution backend is pluggable (`src/execution/index.ts`).

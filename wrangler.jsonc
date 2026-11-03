@@ -61,6 +61,11 @@
 		"MODEL_ENGINEER": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		"MODEL_REVIEWER": "@cf/zai-org/glm-4.7-flash",
 		"THINKING_LEVEL": "low",
+		// Optional: route Workers AI through this AI Gateway so a spend rule
+		// can cap model dollars. Empty means the binding is called directly.
+		// The shipped default is no gateway; the runbook's $0 rule applies
+		// once the operator sets this to a real gateway id.
+		"AI_GATEWAY_ID": "",
 		"EXECUTION_BACKEND": "simulated",
 		"REPO_PROVIDER": "simulated",
 		"SIMULATED_REPO_STATE": "{\"ciStatus\":\"failing\",\"workflow\":\"build-and-test\",\"branch\":\"main\",\"issue\":\"Simulated CI failure: the nightly workflow failed.\"}"

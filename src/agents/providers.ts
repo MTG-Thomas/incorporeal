@@ -53,6 +53,29 @@ export type ResolvedProvider = {
 	source: string;
 };
 
+/**
+ * The AI Gateway id model traffic is routed through, if one is configured.
+ *
+ * Blank and whitespace-only values are unset: an empty `AI_GATEWAY_ID` in
+ * configuration means the binding is called directly, not a gateway named
+ * "".
+ */
+export function resolveGatewayId(env: Env): string | undefined {
+	const id = env.AI_GATEWAY_ID?.trim();
+	return id ? id : undefined;
+}
+
+/**
+ * The stream options that tag an agent's model calls for the gateway.
+ *
+ * Every call carries the agent's id as scalar metadata, so a spend rule can
+ * split the budget per agent. Scalar-only: the gateway rejects nested
+ * metadata, and there is nothing nested to send.
+ */
+export function gatewayStreamOptions(agentId: string): { metadata: { agent_id: string } } {
+	return { metadata: { agent_id: agentId } };
+}
+
 /** The provider the deployment is configured to use. */
 export function providerName(env: Env): ProviderName {
 	const configured = (env.MODEL_PROVIDER || "workers-ai") as ProviderName;
@@ -151,12 +174,21 @@ export async function resolveProvider(
 					"the Workers AI binding is not configured. Set MODEL_PROVIDER to a provider that does not need one, or bind AI."
 				);
 			}
-			const ai = createAI({ binding: env.AI });
+			// A configured gateway owns the dollar boundary: every call runs
+			// under its spend rules, and a $0 rule blocks paid inference with
+			// a 429 the settle path already handles as a model_error. Unset
+			// means the binding is called directly, exactly as before.
+			const gatewayId = resolveGatewayId(env);
+			const ai = gatewayId
+				? createAI({ binding: env.AI, id: gatewayId })
+				: createAI({ binding: env.AI });
 			return withProvider({
 				provider: ai.provider,
 				id: "cloudflare",
 				modelId,
-				source: "the Workers AI binding"
+				source: gatewayId
+					? `the Workers AI binding via AI Gateway "${gatewayId}"`
+					: "the Workers AI binding"
 			});
 		}
 	}

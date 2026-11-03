@@ -27,6 +27,30 @@ Not every model is on the Free plan: a paid-only model answers
 with that reason. The defaults in `wrangler.jsonc` were checked against a
 Free account.
 
+### Capping model dollars with an AI Gateway
+
+Past the free 10,000 neurons/day, Workers AI bills per neuron — and nothing
+in the per-task budgets stops a runaway context from converting into an
+invoice. Set `AI_GATEWAY_ID` to route every Workers AI call through that
+gateway, carrying the agent's id as `agent_id` metadata:
+
+```jsonc
+"vars": { "AI_GATEWAY_ID": "incorporeal" }
+```
+
+The gateway owns the dollar boundary with a spend rule. The shipped posture
+is **$0**: a fresh gateway with a $0 rule blocks any paid inference with a
+`429`, so a new deployment cannot spend until the operator raises the limit.
+The 429 lands in the existing `model_error` settle path — task failed with
+the reason, `task.failed` event, coordinator notified — so no new failure
+taxonomy was needed. `AI_GATEWAY_ID` unset means the binding is called
+directly, exactly as before.
+
+Two things to verify live, because no test can prove them: that traffic
+inside the free allocation still succeeds under the $0 rule (no false 429),
+and that the `agent_id` metadata is visible in the gateway's analytics
+before relying on a per-agent split. See the runbook for the dashboard steps.
+
 ## Cloudflare REST, without a binding
 
 ```sh

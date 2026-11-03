@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { describeCredentials, D1CredentialStore, putCredential } from "../src/agents/credentials.ts";
-import { providerName, resolveProvider } from "../src/agents/providers.ts";
+import { gatewayStreamOptions, providerName, resolveGatewayId, resolveProvider } from "../src/agents/providers.ts";
 import { api, db } from "./helpers.ts";
 import type { Env } from "../src/env.ts";
 
@@ -143,6 +143,37 @@ describe("the model providers", () => {
 		);
 		expect(resolved.id).toBe("openai");
 		expect(resolved.modelId).toBe("gpt-5");
+	});
+});
+
+describe("the AI Gateway budget wiring", () => {
+	it("treats a missing, empty or blank gateway id as no gateway", () => {
+		expect(resolveGatewayId(testEnv({ AI_GATEWAY_ID: undefined }))).toBeUndefined();
+		expect(resolveGatewayId(testEnv({ AI_GATEWAY_ID: "" }))).toBeUndefined();
+		expect(resolveGatewayId(testEnv({ AI_GATEWAY_ID: "   " }))).toBeUndefined();
+		expect(resolveGatewayId(testEnv({ AI_GATEWAY_ID: " prod-gw " }))).toBe("prod-gw");
+	});
+
+	it("tags an agent's calls with its id, as scalar metadata", () => {
+		expect(gatewayStreamOptions("engineer")).toEqual({ metadata: { agent_id: "engineer" } });
+	});
+
+	it("routes Workers AI through the gateway when one is configured", async () => {
+		const direct = await resolveProvider(
+			testEnv({ MODEL_PROVIDER: "workers-ai", AI: {} as never }),
+			db(),
+			"@cf/zai-org/glm-4.7-flash"
+		);
+		expect(direct.id).toBe("cloudflare");
+		expect(direct.source).toBe("the Workers AI binding");
+
+		const gated = await resolveProvider(
+			testEnv({ MODEL_PROVIDER: "workers-ai", AI: {} as never, AI_GATEWAY_ID: "prod-gw" }),
+			db(),
+			"@cf/zai-org/glm-4.7-flash"
+		);
+		expect(gated.id).toBe("cloudflare");
+		expect(gated.source).toContain("prod-gw");
 	});
 });
 

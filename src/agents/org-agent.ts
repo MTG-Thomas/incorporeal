@@ -51,7 +51,7 @@ import type { Env } from "../env.ts";
 import { describeError, logError, logInfo, logWarn } from "../logging.ts";
 import { AssignmentDoc } from "./docs.ts";
 import { FAUX_MODEL_ID, FAUX_PROVIDER_ID } from "./faux.ts";
-import { resolveProvider } from "./providers.ts";
+import { gatewayStreamOptions, resolveProvider } from "./providers.ts";
 import { loadIdentity, type AgentIdentity, ensureBuiltInAgents } from "./identity.ts";
 import { createOrgExtension } from "./tools.ts";
 import { describeAction, type ApprovedAction } from "../policy/action.ts";
@@ -137,7 +137,15 @@ export class OrgAgent extends DurableObject<Env> {
 						// Pi keeps idle caches behind timers, and a pending timer
 						// stops a Durable Object from hibernating. The object's
 						// SQLite is local, so the caches save nothing.
-						settings: { contextRetentionMs: 0, documentRetentionMs: 0 },
+						settings: {
+							contextRetentionMs: 0,
+							documentRetentionMs: 0,
+							// Every model call carries this agent's id as gateway
+							// metadata, so a spend rule can budget per agent. When
+							// no gateway is configured the metadata rides along
+							// with the direct call and changes nothing.
+							stream: gatewayStreamOptions(self.#agentId)
+						},
 						onReport: (error: unknown, info?: { readonly type?: string }) => {
 							logWarn("pi reported a failure", {
 								agentId: self.#agentId,

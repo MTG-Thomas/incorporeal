@@ -36,5 +36,7 @@ GITHUB_WORKFLOW=
 
 # The non-secret configuration does NOT belong here: the model ids
 # (MODEL_DEFAULT, MODEL_COORDINATOR, MODEL_ENGINEER, MODEL_REVIEWER),
-# THINKING_LEVEL, MODEL_PROVIDER, EXECUTION_BACKEND, REPO_PROVIDER and
-# SIMULATED_REPO_STATE live in wrangler.jsonc under "vars".
+# THINKING_LEVEL, AI_GATEWAY_ID, MODEL_PROVIDER, EXECUTION_BACKEND,
+# REPO_PROVIDER and SIMULATED_REPO_STATE live in wrangler.jsonc under "vars".
+# Set AI_GATEWAY_ID locally to exercise the gateway path in dev; leave it
+# empty and the Workers AI binding is called directly.

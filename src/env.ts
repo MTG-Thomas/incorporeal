@@ -31,6 +31,14 @@ export interface Env {
 	CF_ACCESS_ALLOWED_EMAILS?: string;
 	/** An API token with Workers AI Read and AI Gateway Run. */
 	CF_API_TOKEN?: string;
+	/**
+	 * AI Gateway id that Workers AI traffic is routed through, for dollar
+	 * budgeting. Unset means the binding is called directly, exactly as
+	 * today: no gateway, no spend rule, no behavior change. Set it and every
+	 * model call runs under the gateway's spend rules, carrying the agent's
+	 * id as metadata so a rule can budget per agent.
+	 */
+	AI_GATEWAY_ID?: string;
 	/** Bearer token for the management API. Never logged. */
 	ORG_API_TOKEN: string;
 	/** Shared secret for inbound webhooks. Never logged. */

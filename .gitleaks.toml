@@ -1,11 +1,13 @@
 # Incorporeal secret-scan config.
 #
 # Gitleaks extends its embedded default rule set (useDefault) and adds one
-# narrowly scoped synthetic canary rule used ONLY by the controlled CI canary
+# narrowly scoped synthetic canary rule used ONLY by the controlled canary
 # step. The canary prefix (incorporeal_canary_) is unknown to GitHub secret
-# scanning, so committing nothing with this prefix trips push protection;
-# the canary is generated at runtime in a temp dir instead. This proves the
-# scanner path works end to end without committing fixture secrets.
+# scanning, so committing the fixture does not trip push protection; it is
+# still reliably flagged by this rule, proving the scanner path works end
+# to end. The fixture path below is allowlisted for the main tree scan, and
+# the canary step scans a copy outside that path, so detection is proven
+# while normal scans stay green.
 #
 # Suppression policy: do not add blanket exclusions (e.g. whole src/ or file
 # types). New suppressions need a comment with the reason.
@@ -22,3 +24,11 @@ id = "incorporeal-canary"
 description = "Synthetic canary for controlled CI test (not a real credential)."
 regex = '''incorporeal_canary_[A-Za-z0-9]{32}'''
 keywords = ["incorporeal_canary_"]
+
+# Controlled fixture directory: committed canary content would otherwise fail
+# the main tree scan on every PR. The canary CI step copies the fixture to a
+# temp dir (outside this path) and scans it WITHOUT this allowlist matching,
+# so detection is still proven while normal scans stay green.
+[[allowlists]]
+description = "Controlled canary fixture (scanned in isolation by the canary step)."
+paths = ['''test/fixtures/secret-scan/.*''']

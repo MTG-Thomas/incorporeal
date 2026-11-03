@@ -19,6 +19,8 @@ test-results/
 .env
 .env.*
 !.env.example
+# Local celld overlay (carries real secrets for self-hosted experiments).
+wrangler.celld.jsonc
 
 # Pi's local task logs
 .pi/

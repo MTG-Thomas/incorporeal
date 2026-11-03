@@ -76,13 +76,35 @@ celld d1 migrations apply incorporeal . --bucket s3://celld --endpoint http://12
 celld does not implement the Workers AI binding — by construction, not by
 accident. The binding-free path added for this (`MODEL_PROVIDER=cloudflare-rest`
 with `CF_ACCOUNT_ID` and `CF_API_TOKEN`) reaches the same models over the
-Cloudflare REST API and needs no binding, so it works on celld unchanged. The
-faux provider was used for the experiment; the real-model path on celld is
-the one thing that was **not** exercised.
+Cloudflare REST API and needs no binding, so it works on celld unchanged.
+
+The real-model path has now been exercised (2026-11-03, celld 0.6.2, moto S3
+under WSL2): the coordinator's plan, the engineer's investigation and the
+reviewer's review all completed against live Workers AI models, and the
+reviewer genuinely sent work back (`changes_requested` with specific
+findings), which produced rework and escalations with human approvals
+waiting — the whole loop, not just the happy path. Three gotchas, all
+operational:
+
+- **The token needs Workers AI scope.** A narrow account token 401s on
+  `/ai/run` while listing everything else fine. Verify the token with one
+  cheap REST call before deploying with it.
+- **Deployments do not refresh running isolates.** A redeploy that only
+  changes vars adopts cleanly, but long-lived Durable Objects keep their
+  old provider (and old token) until the node restarts. Restart the node
+  after a credential rotation, or chase 401s that no longer exist.
+- **The SDK always names a gateway on REST.** Every REST call carries
+  `cf-aig-gateway-id` (default `default`), and every creatable gateway has
+  authentication permanently on, which the account-token REST path does
+  not satisfy — so gateway-routed spend caps do not apply on celld. The
+  `agent_id` metadata still rides along, but enforcement needs the binding
+  path (Cloudflare) or a provider-side cap. Spend on celld is
+  pay-as-you-go with no hard stop: keep `THINKING_LEVEL=low` and watch it.
 
 ## What was not verified
 
-- The real-model path on celld (only the deterministic provider was run).
+- True concurrency of the race discipline: the claims were sequential. A
+  two-parallel-sweep test against a fleet would close it.
 - True concurrency of the race discipline: the claims were sequential. A
   two-parallel-sweep test against a fleet would close it.
 - A multi-node fleet: a second node, an owner takeover, LTX replication

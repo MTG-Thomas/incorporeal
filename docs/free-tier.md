@@ -302,7 +302,8 @@ top of the daily allocation.
 
 **Capping the bill.** Set `AI_GATEWAY_ID` to route Workers AI through an AI
 Gateway carrying the agent's id as metadata, and put a spend rule on the
-gateway — $0 by default, so a fresh deployment cannot spend until the
+gateway — one cent a day by default ($0 is not representable in the API),
+so a fresh deployment cannot run up a bill until the
 operator raises it. A blocked call answers `429` and settles through the
 existing `model_error` path: task failed with the reason, event recorded,
 coordinator notified. See `docs/providers.md` and the runbook.

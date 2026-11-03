@@ -39,15 +39,18 @@ gateway, carrying the agent's id as `agent_id` metadata:
 ```
 
 The gateway owns the dollar boundary with a spend rule. The shipped posture
-is **$0**: a fresh gateway with a $0 rule blocks any paid inference with a
-`429`, so a new deployment cannot spend until the operator raises the limit.
+is **one cent a day**: a fresh gateway with a $0.01 rule ($0 is not
+representable — the API requires `limit` above zero, in cents) blocks paid
+inference with a `429` once a penny of estimated spend accumulates, so a new
+deployment cannot run up a bill until the operator raises the limit.
 The 429 lands in the existing `model_error` settle path — task failed with
 the reason, `task.failed` event, coordinator notified — so no new failure
 taxonomy was needed. `AI_GATEWAY_ID` unset means the binding is called
 directly, exactly as before.
 
 Two things to verify live, because no test can prove them: that traffic
-inside the free allocation still succeeds under the $0 rule (no false 429),
+inside the free allocation still succeeds under the one-cent rule (no false
+429),
 and that the `agent_id` metadata is visible in the gateway's analytics
 before relying on a per-agent split. See the runbook for the dashboard steps.
 

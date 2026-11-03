@@ -136,12 +136,14 @@ The expected body is `{"status":"ok","env":"local"}` — `env` echoes
 ### 2.5 Cap model dollars with a spend rule (Workers Paid)
 
 Past the free 10,000 neurons/day, every model call bills. The shipped
-posture is **$0**: no paid inference until you say so.
+posture is **one cent a day**: no meaningful paid inference until you say so.
 
 1. In the Cloudflare dashboard, go to **AI > AI Gateway** and create a
 gateway (for example `incorporeal`).
 2. On that gateway, go to **Settings > Spend limits** and add a rule with
-a **$0** budget. Every agent's calls carry its id as `agent_id` metadata,
+a **$0.01** daily budget (one cent is the smallest the API accepts; `$0`
+is rejected, and a penny behaves as zero). Every agent's calls carry its
+id as `agent_id` metadata,
 so you can split the budget per agent later; start with one shared bucket.
 3. Point the deployment at it:
 
@@ -156,7 +158,8 @@ where it bills.
 4. Verify live, because no test can prove these: send an agent a note
 (`POST /api/agents/engineer/note`) and confirm the call succeeds inside
 the free allocation, then check the gateway's analytics that the request
-carried the `agent_id` metadata. Only then consider raising the $0 rule.
+carried the `agent_id` metadata. Only then consider raising the one-cent
+rule.
 
 A blocked call answers `429` and settles through the existing `model_error`
 path: the task fails with the reason, the event is recorded, and the

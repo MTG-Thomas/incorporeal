@@ -28,7 +28,7 @@
 		"@cloudflare/vitest-plugin": "^1.4.6",
 		"@cloudflare/workers-types": "^5.20261106.1",
 		"@types/node": "^22.10.0",
-		"typescript": "^5.7.0",
+		"typescript": "^7.0.2",
 		"vitest": "^5.0.5",
 		"wrangler": "^4.151.3"
 	}

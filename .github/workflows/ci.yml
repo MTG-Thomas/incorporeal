@@ -32,8 +32,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Tolerates only advisories with no patched release, keyed by GHSA ID in
+      # the script. Any other production finding still fails the build.
       - name: Audit production dependencies
-        run: npm audit --omit=dev
+        run: node scripts/audit-production.mjs
 
       - name: Guardrails (secrets must stay untracked)
         shell: bash

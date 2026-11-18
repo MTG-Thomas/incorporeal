@@ -8,9 +8,7 @@
  * than at runtime in an agent's turn.
  */
 import type {
-	AgentEvent,
 	EntryRecord,
-	SnapshotEvent,
 	TaskInspection,
 	UsageState
 } from "@earendil-works/pi-durable";
@@ -27,10 +25,8 @@ export type ModelHasCost = Assert<
 	UsageState["models"][string] extends { cost: { total: number } } ? true : false
 >;
 
-/** A transcript entry carries its kind, and an agent event carries its type. */
+/** A transcript entry carries its kind. */
 export type EntryHasKind = Assert<"kind" extends keyof EntryRecord ? true : false>;
-export type AgentEventHasType = Assert<"type" extends keyof AgentEvent ? true : false>;
-export type SnapshotHasEntries = Assert<"entries" extends keyof SnapshotEvent ? true : false>;
 
 /** An inspected task carries the record and the state the task graph reads. */
 export type TaskHasState = Assert<"state" extends keyof TaskInspection ? true : false>;

@@ -7,7 +7,7 @@
  * widen what it is allowed to do. Being offered a tool is a convenience; the
  * check inside `execute` is the control.
  */
-import { Type } from "@earendil-works/pi-ai";
+import { arr, lit, num, obj, opt, str, union } from "@earendil-works/pi-schema";
 import { defineExtension, defineTool, section, type ToolExecutionApi, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
 import {
@@ -144,7 +144,7 @@ export function createOrgExtension(context: OrgToolContext) {
 	const readTask = defineTool({
 		name: "org_read_task",
 		description: "Read one organizational task: its status, owner, deadline, result and evidence.",
-		parameters: Type.Object({ task_id: Type.String() }),
+		parameters: obj({ task_id: str() }),
 		async execute(args, _api, _piContext): Promise<ToolOutput> {
 			await requirePermission(context, "task.read");
 			await chargeToolCall(context, null);
@@ -157,10 +157,10 @@ export function createOrgExtension(context: OrgToolContext) {
 	const listOrgTasks = defineTool({
 		name: "org_list_tasks",
 		description: "List organizational tasks, optionally filtered by status, assignee or kind.",
-		parameters: Type.Object({
-			status: Type.Optional(Type.String()),
-			assignee: Type.Optional(Type.String()),
-			limit: Type.Optional(Type.Number())
+		parameters: obj({
+			status: opt(str()),
+			assignee: opt(str()),
+			limit: opt(num())
 		}),
 		async execute(args, _api, _piContext): Promise<ToolOutput> {
 			await requirePermission(context, "task.read");
@@ -178,27 +178,27 @@ export function createOrgExtension(context: OrgToolContext) {
 		name: "org_report_result",
 		description:
 			"Report the result of the task you are working on. This completes the task and hands it to the coordinator.",
-		parameters: Type.Object({
-			task_id: Type.Optional(Type.String()),
-			summary: Type.String(),
-			findings: Type.Optional(Type.Array(Type.String())),
-			recommendation: Type.Optional(
-				Type.Union([Type.Literal("accept"), Type.Literal("changes_requested"), Type.Literal("escalate")])
+		parameters: obj({
+			task_id: opt(str()),
+			summary: str(),
+			findings: opt(arr(str())),
+			recommendation: opt(
+				union([lit("accept"), lit("changes_requested"), lit("escalate")])
 			),
-			evidence: Type.Optional(Type.Array(Type.String())),
-			artifact: Type.Optional(Type.Object({
-				kind: Type.String(),
-				uri: Type.Optional(Type.String()),
-				content: Type.Optional(Type.String())
+			evidence: opt(arr(str())),
+			artifact: opt(obj({
+				kind: str(),
+				uri: opt(str()),
+				content: opt(str())
 			})),
 			// The action this task proposes to run, if any. A human approves
 			// an action, not a task.
-			action: Type.Optional(Type.Object({
-				command: Type.String(),
-				args: Type.Optional(Type.Array(Type.String())),
-				backend: Type.Optional(Type.String()),
-				repo: Type.Optional(Type.String()),
-				branch: Type.Optional(Type.String())
+			action: opt(obj({
+				command: str(),
+				args: opt(arr(str())),
+				backend: opt(str()),
+				repo: opt(str()),
+				branch: opt(str())
 			}))
 		}),
 		// The task's own state makes this idempotent: a replay finds the
@@ -256,12 +256,12 @@ export function createOrgExtension(context: OrgToolContext) {
 		name: "org_delegate",
 		description:
 			"Delegate a bounded piece of work to another agent. Creates an explicit task with its own id, deadline and attempt limit.",
-		parameters: Type.Object({
-			title: Type.String(),
-			instruction: Type.String(),
-			assignee: Type.String(),
-			kind: Type.Optional(Type.String()),
-			deadline_minutes: Type.Optional(Type.Number())
+		parameters: obj({
+			title: str(),
+			instruction: str(),
+			assignee: str(),
+			kind: opt(str()),
+			deadline_minutes: opt(num())
 		}),
 		// A replay after an interruption finds the task this call made
 		// instead of creating a second one.
@@ -333,14 +333,14 @@ export function createOrgExtension(context: OrgToolContext) {
 		name: "org_request_approval",
 		description:
 			"Ask a human to authorize something. The task is blocked until a human approves it through the management API.",
-		parameters: Type.Object({
-			reason: Type.String(),
-			action: Type.Optional(Type.Object({
-				command: Type.String(),
-				args: Type.Optional(Type.Array(Type.String())),
-				backend: Type.Optional(Type.String()),
-				repo: Type.Optional(Type.String()),
-				branch: Type.Optional(Type.String())
+		parameters: obj({
+			reason: str(),
+			action: opt(obj({
+				command: str(),
+				args: opt(arr(str())),
+				backend: opt(str()),
+				repo: opt(str()),
+				branch: opt(str())
 			}))
 		}),
 		// A replay finds the request this call made.
@@ -382,14 +382,14 @@ export function createOrgExtension(context: OrgToolContext) {
 		name: "org_write_knowledge",
 		description:
 			"Record shared organizational knowledge: a decision, a convention, or a verified finding that outlives this task.",
-		parameters: Type.Object({
-			kind: Type.Union([
-				Type.Literal("decision"),
-				Type.Literal("convention"),
-				Type.Literal("finding")
+		parameters: obj({
+			kind: union([
+				lit("decision"),
+				lit("convention"),
+				lit("finding")
 			]),
-			title: Type.String(),
-			body: Type.String()
+			title: str(),
+			body: str()
 		}),
 		// A replay finds the entry this call wrote.
 		replay: "safe",
@@ -412,7 +412,7 @@ export function createOrgExtension(context: OrgToolContext) {
 	const readKnowledge = defineTool({
 		name: "org_read_knowledge",
 		description: "Read shared organizational knowledge: decisions, conventions and verified findings.",
-		parameters: Type.Object({ limit: Type.Optional(Type.Number()) }),
+		parameters: obj({ limit: opt(num()) }),
 		async execute(args, _api, _piContext): Promise<ToolOutput> {
 			await requirePermission(context, "knowledge.read");
 			await chargeToolCall(context, null);
@@ -425,11 +425,11 @@ export function createOrgExtension(context: OrgToolContext) {
 		name: "org_run_execution",
 		description:
 			"Ask the execution backend to run something (for example a CI job or a test command). The action is idempotent: the same idempotency key never runs twice.",
-		parameters: Type.Object({
-			command: Type.String(),
-			args: Type.Optional(Type.Array(Type.String())),
-			notes: Type.Optional(Type.String()),
-			idempotency_key: Type.String()
+		parameters: obj({
+			command: str(),
+			args: opt(arr(str())),
+			notes: opt(str()),
+			idempotency_key: str()
 		}),
 		replay: "safe",
 		async execute(args, api, piContext): Promise<ToolOutput> {
